@@ -1,29 +1,47 @@
 # OpenRouter Image Generator - Streamlit App
 
-A user-friendly Streamlit web application for generating images using OpenRouter's AI image generation models.
+A comprehensive Streamlit application for AI image generation, management, and analysis using OpenRouter's API.
 
 ## Features
 
-- 🎨 **Multiple AI Models**: Support for 6 different image generation models including FLUX, Gemini, and GPT
-- 🖼️ **Reference Images**: Upload multiple reference images to guide the generation
-- ⚙️ **Customizable Parameters**: Full control over all generation parameters
-- 📐 **Aspect Ratios**: 10 different aspect ratio options with auto-detection from reference images
-- 🎲 **Seed Control**: Use random or fixed seeds for reproducible results
-- 💾 **Auto-save**: Automatic saving with metadata (prompt, model, seed, aspect ratio)
-- 📜 **Generation History**: View and download previous generations
-- 📥 **Easy Download**: One-click download for generated images
+### 🎨 Image Generation Page
+- **Multiple AI Models**: 6 models including FLUX.2-Pro, FLUX.2-Flex, Gemini 2.5/3, GPT-5
+- **Reference Images**: Multi-image upload with auto aspect ratio detection
+- **Smart Prompting**: Quick prompts from built-in YAML template library (create & edit prompts)
+- **10 Aspect Ratios**: From 1:1 square to 21:9 ultrawide with auto-detection
+- **Seed Control**: Random or fixed seeds for reproducible results
+- **Auto-save**: Images saved with embedded metadata (prompt, model, seed, aspect ratio)
+
+### 🖼️ Image Viewer Page
+- **Recursive Browsing**: View all images from outputs folder and subfolders
+- **Smart Filtering**: Filter by folder, sort by date/name/size
+- **Grid View**: Adjustable 1-6 column layout
+- **Metadata Display**: View generation parameters from saved images
+- **Quick Navigation**: Easy subfolder navigation and image preview
+
+### 📝 Prompt Manager Page
+- **YAML Editor**: Visual interface for `prompts.yaml` and `prompts_custom.yaml`
+- **Organized Library**: Create/Edit prompt categories with nested structure
+- **Live Editing**: Add, edit, delete prompts and categories
+- **Bulk Operations**: Manage entire prompt collections
+- **Auto-save**: Changes sync with generation page
+
+### 🏷️ VLM Tagger Page
+- **Multi-Provider Support**: Groq, OpenRouter, and xAI (Grok) integration
+- **Smart Tagging**: Generate tags, detailed tags, prompts from images
+- **Caption Generation**: Detailed and highly-detailed captions
+- **Custom Focus**: Predefined focus modes (cuteness, artistic, fantasy) via `tagger_focus.json`
+- **Batch Processing**: Analyze multiple images with customizable settings
+- **Image Optimization**: Automatic resize and padding for optimal VLM processing
 
 ## Installation
 
-1. Install the required dependencies:
+Install the required dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-Or install manually:
-```bash
-pip install streamlit openai pillow
-```
+Required packages: `streamlit`, `openai`, `pillow`, `pyyaml`
 
 ## Usage
 
@@ -32,15 +50,16 @@ pip install streamlit openai pillow
 streamlit run app.py
 ```
 
-2. **Configure the API Key:**
-   - Enter your OpenRouter API key in the sidebar
-   - Or place it in `api_keys.json` file (see format below)
+2. **Configure API Keys:**
+   - Enter API keys in the sidebar or create `api_keys.json` (see format below)
+   - OpenRouter required for image generation
+   - Groq/xAI/OpenRouter optional for VLM tagging
 
-3. **Generate Images:**
-   - Enter your prompt in the text area
-   - (Optional) Upload reference images
-   - Customize parameters in the sidebar
-   - Click "Generate Image"
+3. **Use the App:**
+   - **Generate**: Enter prompt, select model, optional reference images, generate
+   - **Viewer**: Browse and filter generated images from outputs folder
+   - **Prompts**: Create/edit prompt templates in YAML library
+   - **Tagger**: Analyze images with VLM models to generate tags/captions/prompts
 
 ## Configuration
 
@@ -49,7 +68,9 @@ streamlit run app.py
 Create an `api_keys.json` file in the same directory:
 ```json
 {
-  "openrouter": "your-api-key-here"
+  "openrouter": "your-api-key-here",
+  "groq": "your-groq-api-key-here",
+  "xai": "your-xai-api-key-here"
 }
 ```
 
@@ -130,17 +151,19 @@ Example: `A_fluffy_cat_yawning_flux.2-pro_20251205_143022.png`
 ## Project Structure
 
 ```
-vlm-tagger-prompt-gen/
-├── app.py                      # Streamlit application
-├── generator.py                # Original generation script
-├── requirements.txt  # Dependencies
-├── api_keys.json              # API keys (create this)
-└── outputs/                   # Generated images (auto-created)
+myimagegen/
+├── app.py                      # Main Streamlit app with multi-page navigation
+├── api_generator.py            # Core image generation logic
+├── image_viewer_page.py        # Image browsing and viewing interface
+├── prompt_manager_page.py      # YAML prompt editor
+├── tagger_page.py              # VLM image analysis tools
+├── prompts.yaml                # Default prompt templates
+├── prompts_custom.yaml         # User-created custom prompts
+├── tagger_focus.json           # Custom VLM focus configurations
+├── api_keys.json               # API keys (create this)
+├── requirements.txt            # Dependencies
+└── outputs/                    # Generated images (auto-created)
 ```
-
-## Based On
-
-This Streamlit app is based on the functionality from `generator.py` which provides the core image generation capabilities using OpenRouter API.
 
 ## License
 
