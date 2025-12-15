@@ -17,7 +17,7 @@ A user-friendly Streamlit web application for generating images using OpenRouter
 
 1. Install the required dependencies:
 ```bash
-pip install -r requirements_streamlit.txt
+pip install -r requirements.txt
 ```
 
 Or install manually:
