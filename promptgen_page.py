@@ -182,14 +182,23 @@ class TaggerGPT:
 
 
 def show_tagger_page():
-    """Main function to display the Prompt Tagger page"""
+    """Main function to display the Prompt Generator page"""
     
-    st.title("🏷️ Prompt Tagger")
-    st.markdown("Generate prompts, tags, and captions from images using vision models")
+    st.title("✨ Prompt Generator")
+    st.markdown("Generate prompts, tags, and captions from images or create prompts from text using AI models")
     
     # Sidebar configuration
     with st.sidebar:
-        st.header("⚙️ Tagger Settings")
+        st.header("⚙️ Generator Settings")
+        
+        # Mode selection
+        generation_mode = st.radio(
+            "Generation Mode",
+            ["📷 From Image", "📝 From Text"],
+            help="Choose whether to generate from images or text"
+        )
+        
+        st.divider()
         
         # Model selection
         st.subheader("Model Selection")
@@ -283,17 +292,40 @@ def show_tagger_page():
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.header("📤 Upload Images")
+        if generation_mode == "📷 From Image":
+            st.header("📤 Upload Images")
+            
+            # File uploader
+            uploaded_files = st.file_uploader(
+                "Upload one or more images",
+                type=["png", "jpg", "jpeg", "webp", "bmp"],
+                accept_multiple_files=True,
+                help="Upload images to analyze and generate prompts"
+            )
+        else:
+            st.header("📝 Text Input")
+            uploaded_files = None
         
-        # File uploader
-        uploaded_files = st.file_uploader(
-            "Upload one or more images",
-            type=["png", "jpg", "jpeg", "webp", "bmp"],
-            accept_multiple_files=True,
-            help="Upload images to analyze and generate prompts"
-        )
-        
-        if uploaded_files:
+        if generation_mode == "📝 From Text":
+            st.subheader("Draft Text")
+            draft_text = st.text_area(
+                "Enter your draft prompt or idea",
+                height=200,
+                placeholder="e.g., A girl sitting on a bench in a park...",
+                help="Enter your draft text that will be enhanced with focus and style"
+            )
+            
+            st.divider()
+            
+            # Additional prompt text for text mode
+            st.subheader("Additional Instructions (Optional)")
+            additional_prompt = st.text_area(
+                "Add custom instructions",
+                height=100,
+                placeholder="e.g., Make it more detailed, emphasize certain aspects...",
+                help="Add any additional context or instructions for the model"
+            )
+        elif uploaded_files:
             st.write(f"**{len(uploaded_files)} image(s) uploaded**")
             
             # Display thumbnails
@@ -314,18 +346,27 @@ def show_tagger_page():
                 placeholder="e.g., Focus on specific details, describe in a certain style...",
                 help="Add any additional context or instructions for the model"
             )
+        else:
+            draft_text = None
+            additional_prompt = None
             
-            # Generate button
-            process_btn = st.button(
-                "🚀 Generate",
-                type="primary",
-                use_container_width=True
-            )
+        # Generate button
+        if generation_mode == "📷 From Image":
+            can_generate = uploaded_files is not None
+        else:
+            can_generate = 'draft_text' in locals() and draft_text and draft_text.strip()
+        
+        process_btn = st.button(
+            "🚀 Generate",
+            type="primary",
+            use_container_width=True,
+            disabled=not can_generate
+        )
     
     with col2:
         st.header("📄 Generated Results")
         
-        if uploaded_files and process_btn:
+        if process_btn and (uploaded_files or (generation_mode == "📝 From Text" and 'draft_text' in locals() and draft_text)):
             # Initialize tagger
             try:
                 with st.spinner(f"Initializing {selected_model_key} model..."):
@@ -343,54 +384,99 @@ def show_tagger_page():
                 if additional_prompt:
                     user_prompt = f"{user_prompt}\n\n{additional_prompt}"
                 
-                # Process each image
+                # Process based on mode
                 results = []
                 
-                for idx, uploaded_file in enumerate(uploaded_files):
-                    st.subheader(f"Image {idx+1}: {uploaded_file.name}")
+                # Text-only mode
+                if generation_mode == "📝 From Text":
+                    st.subheader("Generated Prompt")
                     
-                    # Load and process image
-                    img = Image.open(uploaded_file).convert("RGB")
+                    # Build prompt for text enhancement
+                    text_instruction = f"Enhance and refine the following draft text into a polished prompt suitable for image generation. Maintain the core idea while adding appropriate details, style, and clarity."
                     
-                    # Show preview
-                    with st.expander("🖼️ View Image", expanded=False):
-                        st.image(img, use_container_width=True)
+                    if use_focus and selected_focus:
+                        focus_text = FOCUS[selected_focus]
+                        text_instruction = f"{text_instruction}\n\n{focus_text}"
                     
-                    # Optimize or resize image
-                    if optimize_images:
-                        with st.spinner(f"Optimizing image {idx+1}..."):
-                            processed_img = optimize_image(img, target_size=target_size)
-                    else:
-                        processed_img = resize_image(img, max_size=target_size)
+                    if additional_prompt:
+                        text_instruction = f"{text_instruction}\n\n{additional_prompt}"
+                    
+                    text_instruction = f"{text_instruction}\n\nDraft text: {draft_text}"
                     
                     # Generate response
-                    with st.spinner(f"Analyzing image {idx+1}..."):
+                    with st.spinner("Generating enhanced prompt..."):
                         try:
                             result = tagger.chat_completion_prompt(
                                 DEFAULT_SYSTEM_IMAGE_PROMPT,
-                                user_prompt,
-                                image=processed_img
+                                text_instruction,
+                                image=None
                             )
                             
-                            st.success(f"✅ Generated for image {idx+1}")
+                            st.success("✅ Prompt generated successfully")
                             
                             # Display result
-                            st.markdown("**Result:**")
+                            st.markdown("**Enhanced Prompt:**")
                             st.info(result)
                             
                             # Copy button
                             st.code(result, language=None)
                             
                             results.append({
-                                'filename': uploaded_file.name,
+                                'filename': 'text_prompt',
                                 'result': result,
-                                'task': selected_task
+                                'task': 'Text Enhancement'
                             })
                             
                         except Exception as e:
-                            st.error(f"❌ Error processing image {idx+1}: {str(e)}")
+                            st.error(f"❌ Error generating prompt: {str(e)}")
                     
-                    st.divider()
+                # Image mode - Process each image
+                elif uploaded_files:
+                    for idx, uploaded_file in enumerate(uploaded_files):
+                        st.subheader(f"Image {idx+1}: {uploaded_file.name}")
+                        
+                        # Load and process image
+                        img = Image.open(uploaded_file).convert("RGB")
+                        
+                        # Show preview
+                        with st.expander("🖼️ View Image", expanded=False):
+                            st.image(img, use_container_width=True)
+                        
+                        # Optimize or resize image
+                        if optimize_images:
+                            with st.spinner(f"Optimizing image {idx+1}..."):
+                                processed_img = optimize_image(img, target_size=target_size)
+                        else:
+                            processed_img = resize_image(img, max_size=target_size)
+                        
+                        # Generate response
+                        with st.spinner(f"Analyzing image {idx+1}..."):
+                            try:
+                                result = tagger.chat_completion_prompt(
+                                    DEFAULT_SYSTEM_IMAGE_PROMPT,
+                                    user_prompt,
+                                    image=processed_img
+                                )
+                                
+                                st.success(f"✅ Generated for image {idx+1}")
+                                
+                                # Display result
+                                st.markdown("**Result:**")
+                                st.info(result)
+                                
+                                # Copy button
+                                st.code(result, language=None)
+                                
+                                results.append({
+                                    'filename': uploaded_file.name,
+                                    'result': result,
+                                    'task': selected_task
+                                })
+                                
+                            except Exception as e:
+                                st.error(f"❌ Error processing image {idx+1}: {str(e)}")
+                        
+                        st.divider()
                 
                 # Summary and export
                 if results:
@@ -417,13 +503,21 @@ def show_tagger_page():
                 st.error(f"❌ Error: {str(e)}")
                 st.exception(e)
         
-        elif not uploaded_files:
-            st.info("👈 Upload images to get started")
+        else:
+            if generation_mode == "📷 From Image":
+                st.info("👈 Upload images to get started")
+            else:
+                st.info("👈 Enter draft text to get started")
     
     # Info section
     st.divider()
-    with st.expander("ℹ️ About Tasks", expanded=False):
+    with st.expander("ℹ️ About", expanded=False):
         st.markdown("""
+        ### Generation Modes:
+        
+        - **From Image**: Analyze images and generate prompts, tags, or captions
+        - **From Text**: Enhance draft text into polished prompts with focus and style
+        
         ### Available Tasks:
         
         - **General Tags**: Generate comma-separated keywords capturing main elements
@@ -452,6 +546,6 @@ def show_tagger_page():
     st.divider()
     st.markdown("""
     <div style='text-align: center; color: gray; padding: 20px;'>
-        <p>Prompt Tagger • Powered by multiple AI providers</p>
+        <p>Prompt Generator • Powered by multiple AI providers</p>
     </div>
     """, unsafe_allow_html=True)

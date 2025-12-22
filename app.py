@@ -24,7 +24,11 @@ OPENROUTER_IMAGE_MODELS = {
     "gemini-2.5-flash-image": "google/gemini-2.5-flash-image",
     "gemini-3-pro-image-preview": "google/gemini-3-pro-image-preview",
     "gpt-5-image-mini": "openai/gpt-5-image-mini",
-    "gpt-5-image": "openai/gpt-5-image"
+    "gpt-5-image": "openai/gpt-5-image",
+
+    "riverflow-v2-fast-preview" :"sourceful/riverflow-v2-fast-preview",
+    "riverflow-v2-standard-preview" :"sourceful/riverflow-v2-standard-preview",
+    "riverflow-v2-max-preview" :"sourceful/riverflow-v2-max-preview",
 }
 
 ASPECT_RATIOS = {
@@ -307,7 +311,7 @@ with st.sidebar:
     st.title("🎨 Image Tools")
     page = st.radio(
         "Navigate",
-        ["Image Generator", "Image Viewer", "Prompt Manager", "Prompt Tagger"],
+        ["Image Generator", "Image Viewer", "Prompt Manager", "Prompt Generator"],
         label_visibility="collapsed"
     )
     st.divider()
@@ -324,10 +328,10 @@ if page == "Prompt Manager":
     prompt_manager_page.show_prompt_manager_page()
     st.stop()
 
-if page == "Prompt Tagger":
+if page == "Prompt Generator":
     # Import and run the tagger page
-    import tagger_page
-    tagger_page.show_tagger_page()
+    import promptgen_page
+    promptgen_page.show_tagger_page()
     st.stop()
 
 # Main UI
