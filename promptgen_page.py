@@ -185,20 +185,11 @@ def show_tagger_page():
     """Main function to display the Prompt Generator page"""
     
     st.title("✨ Prompt Generator")
-    st.markdown("Generate prompts, tags, and captions from images or create prompts from text using AI models")
+    st.markdown("Generate prompts from text, images, or both together using AI models")
     
     # Sidebar configuration
     with st.sidebar:
         st.header("⚙️ Generator Settings")
-        
-        # Mode selection
-        generation_mode = st.radio(
-            "Generation Mode",
-            ["📷 From Image", "📝 From Text"],
-            help="Choose whether to generate from images or text"
-        )
-        
-        st.divider()
         
         # Model selection
         st.subheader("Model Selection")
@@ -292,40 +283,27 @@ def show_tagger_page():
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        if generation_mode == "📷 From Image":
-            st.header("📤 Upload Images")
-            
-            # File uploader
-            uploaded_files = st.file_uploader(
-                "Upload one or more images",
-                type=["png", "jpg", "jpeg", "webp", "bmp"],
-                accept_multiple_files=True,
-                help="Upload images to analyze and generate prompts"
-            )
-        else:
-            st.header("📝 Text Input")
-            uploaded_files = None
+        st.header("📝 Input")
         
-        if generation_mode == "📝 From Text":
-            st.subheader("Draft Text")
-            draft_text = st.text_area(
-                "Enter your draft prompt or idea",
-                height=200,
-                placeholder="e.g., A girl sitting on a bench in a park...",
-                help="Enter your draft text that will be enhanced with focus and style"
-            )
-            
-            st.divider()
-            
-            # Additional prompt text for text mode
-            st.subheader("Additional Instructions (Optional)")
-            additional_prompt = st.text_area(
-                "Add custom instructions",
-                height=100,
-                placeholder="e.g., Make it more detailed, emphasize certain aspects...",
-                help="Add any additional context or instructions for the model"
-            )
-        elif uploaded_files:
+        # Draft text input
+        draft_text = st.text_area(
+            "Draft Text (Optional)",
+            height=150,
+            placeholder="e.g., A girl sitting on a bench in a park...",
+            help="Enter your draft text (optional). Works with or without images."
+        )
+        
+        st.divider()
+        
+        # File uploader
+        uploaded_files = st.file_uploader(
+            "Upload Images (Optional)",
+            type=["png", "jpg", "jpeg", "webp", "bmp"],
+            accept_multiple_files=True,
+            help="Upload images to analyze (optional). Works with or without text."
+        )
+        
+        if uploaded_files:
             st.write(f"**{len(uploaded_files)} image(s) uploaded**")
             
             # Display thumbnails
@@ -335,26 +313,22 @@ def show_tagger_page():
                     img = Image.open(uploaded_file).convert("RGB")
                     st.image(img, caption=f"Image {idx+1}", use_container_width=True)
                     st.caption(f"Size: {img.size[0]}×{img.size[1]}")
-            
-            st.divider()
-            
-            # Additional prompt text
-            st.subheader("Additional Instructions (Optional)")
-            additional_prompt = st.text_area(
-                "Add custom instructions",
-                height=100,
-                placeholder="e.g., Focus on specific details, describe in a certain style...",
-                help="Add any additional context or instructions for the model"
-            )
-        else:
-            draft_text = None
-            additional_prompt = None
-            
+        
+        st.divider()
+        
+        # Additional instructions
+        st.subheader("Additional Instructions (Optional)")
+        additional_prompt = st.text_area(
+            "Add custom instructions",
+            height=100,
+            placeholder="e.g., Focus on specific details, add more style...",
+            help="Add any additional context or instructions for the model"
+        )
+        
         # Generate button
-        if generation_mode == "📷 From Image":
-            can_generate = uploaded_files is not None
-        else:
-            can_generate = 'draft_text' in locals() and draft_text and draft_text.strip()
+        has_draft_text = draft_text and draft_text.strip()
+        has_images = uploaded_files is not None and len(uploaded_files) > 0
+        can_generate = has_draft_text or has_images
         
         process_btn = st.button(
             "🚀 Generate",
@@ -366,29 +340,16 @@ def show_tagger_page():
     with col2:
         st.header("📄 Generated Results")
         
-        if process_btn and (uploaded_files or (generation_mode == "📝 From Text" and 'draft_text' in locals() and draft_text)):
+        if process_btn and can_generate:
             # Initialize tagger
             try:
                 with st.spinner(f"Initializing {selected_model_key} model..."):
                     tagger = TaggerGPT(selected_model)
                 
-                # Build the prompt
-                base_instruction = INSTUCTIONS[selected_task]
-                
-                if use_focus and selected_focus:
-                    focus_text = FOCUS[selected_focus]
-                    user_prompt = f"{base_instruction}\n\n{focus_text}"
-                else:
-                    user_prompt = base_instruction
-                
-                if additional_prompt:
-                    user_prompt = f"{user_prompt}\n\n{additional_prompt}"
-                
-                # Process based on mode
                 results = []
                 
-                # Text-only mode
-                if generation_mode == "📝 From Text":
+                # Case 1: Only text provided (no images)
+                if has_draft_text and not has_images:
                     st.subheader("Generated Prompt")
                     
                     # Build prompt for text enhancement
@@ -429,9 +390,26 @@ def show_tagger_page():
                             
                         except Exception as e:
                             st.error(f"❌ Error generating prompt: {str(e)}")
+                
+                # Case 2: Images provided (with or without text)
+                elif has_images:
+                    # Build the base prompt
+                    base_instruction = INSTUCTIONS[selected_task]
                     
-                # Image mode - Process each image
-                elif uploaded_files:
+                    if use_focus and selected_focus:
+                        focus_text = FOCUS[selected_focus]
+                        user_prompt = f"{base_instruction}\n\n{focus_text}"
+                    else:
+                        user_prompt = base_instruction
+                    
+                    # Add draft text if provided
+                    if has_draft_text:
+                        user_prompt = f"{user_prompt}\n\nContext/Reference text: {draft_text}"
+                    
+                    if additional_prompt:
+                        user_prompt = f"{user_prompt}\n\n{additional_prompt}"
+                    
+                    # Process each image
                     for idx, uploaded_file in enumerate(uploaded_files):
                         st.subheader(f"Image {idx+1}: {uploaded_file.name}")
                         
@@ -504,19 +482,17 @@ def show_tagger_page():
                 st.exception(e)
         
         else:
-            if generation_mode == "📷 From Image":
-                st.info("👈 Upload images to get started")
-            else:
-                st.info("👈 Enter draft text to get started")
+            st.info("👈 Enter draft text and/or upload images to get started")
     
     # Info section
     st.divider()
     with st.expander("ℹ️ About", expanded=False):
         st.markdown("""
-        ### Generation Modes:
+        ### How It Works:
         
-        - **From Image**: Analyze images and generate prompts, tags, or captions
-        - **From Text**: Enhance draft text into polished prompts with focus and style
+        - **Text Only**: Enter draft text to enhance it into a polished prompt
+        - **Images Only**: Upload images to generate prompts, tags, or captions
+        - **Text + Images**: Combine both for context-aware image analysis
         
         ### Available Tasks:
         
