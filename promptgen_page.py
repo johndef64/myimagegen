@@ -45,10 +45,10 @@ GROQ_MODELS = {
 }
 
 OPENROUTER_MODELS = {
-    "bert-nebulon-alpha": "openrouter/bert-nebulon-alpha",
-    "sonar-pro-search": "perplexity/sonar-pro-search",
-    "grok-4-fast": "x-ai/grok-4-fast",
     "grok-4": "x-ai/grok-4",
+    "grok-4-fast": "x-ai/grok-4-fast",
+    "sonar-pro-search": "perplexity/sonar-pro-search",
+    "bert-nebulon-alpha": "openrouter/bert-nebulon-alpha",  
 }
 
 XAI_MODELS = {
