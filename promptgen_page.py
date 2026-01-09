@@ -5,6 +5,7 @@ from io import BytesIO
 from PIL import Image, ImageOps
 import json
 import os
+from datetime import datetime
 
 # Instructions and settings
 json_example = """{
@@ -242,6 +243,10 @@ class TaggerGPT:
 def show_tagger_page():
     """Main function to display the Prompt Generator page"""
     
+    # Initialize session state for prompt history
+    if 'prompt_history' not in st.session_state:
+        st.session_state.prompt_history = []
+    
     st.title("✨ Prompt Generator")
     st.markdown("Generate prompts from text, images, or both together using AI models")
     
@@ -347,6 +352,9 @@ def show_tagger_page():
                 step=128
             )
     
+   
+    st.divider()
+    
     # Main content area
     col1, col2 = st.columns([1, 1])
     
@@ -450,11 +458,17 @@ def show_tagger_page():
                             # Copy button
                             st.code(result, language=None)
                             
-                            results.append({
+                            result_item = {
                                 'filename': 'text_prompt',
                                 'result': result,
-                                'task': 'Text Enhancement'
-                            })
+                                'task': 'Text Enhancement',
+                                'model': selected_model_key,
+                                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            }
+                            results.append(result_item)
+                            
+                            # Add to history
+                            st.session_state.prompt_history.insert(0, result_item)
                             
                         except Exception as e:
                             st.error(f"❌ Error generating prompt: {str(e)}")
@@ -513,11 +527,17 @@ def show_tagger_page():
                                 # Copy button
                                 st.code(result, language=None)
                                 
-                                results.append({
+                                result_item = {
                                     'filename': uploaded_file.name,
                                     'result': result,
-                                    'task': selected_task
-                                })
+                                    'task': selected_task,
+                                    'model': selected_model_key,
+                                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                }
+                                results.append(result_item)
+                                
+                                # Add to history
+                                st.session_state.prompt_history.insert(0, result_item)
                                 
                             except Exception as e:
                                 st.error(f"❌ Error processing image {idx+1}: {str(e)}")
@@ -552,6 +572,64 @@ def show_tagger_page():
         else:
             st.info("👈 Enter draft text and/or upload images to get started")
     
+
+     # Prompt History section in main content
+    if st.session_state.prompt_history:
+        st.divider()
+        st.subheader("📜 Prompt History")
+        
+        # Create options for selectbox
+        history_options = ["Select a previous prompt..."] + [
+            f"{item['timestamp']} - {item['result'][:40]}..."
+            for item in st.session_state.prompt_history[:15]
+        ]
+        
+        history_cols = st.columns([2, 1])
+        with history_cols[0]:
+            selected_history = st.selectbox(
+                "Select from your previous generated prompts",
+                options=range(len(history_options)),
+                format_func=lambda x: history_options[x],
+                help="Select a previous prompt to view or reuse",
+                label_visibility="collapsed"
+            )
+        
+        with history_cols[1]:
+            if st.button("🗑️ Clear All History", help="Clear all prompt history", use_container_width=True):
+                st.session_state.prompt_history = []
+                st.rerun()
+        
+        if selected_history > 0:
+            history_item = st.session_state.prompt_history[selected_history - 1]
+            with st.expander("📝 View Selected Prompt", expanded=True):
+                hist_cols = st.columns([3, 1])
+                with hist_cols[0]:
+                    st.text_area(
+                        "Generated Prompt",
+                        value=history_item['result'],
+                        height=120,
+                        key=f"history_view_{selected_history}",
+                        label_visibility="collapsed"
+                    )
+                
+                with hist_cols[1]:
+                    st.write("**Details:**")
+                    st.caption(f"**Task:** {history_item['task']}")
+                    st.caption(f"**Model:** {history_item.get('model', 'N/A')}")
+                    st.caption(f"**Time:** {history_item['timestamp']}")
+                    
+                    # Copy button for history item
+                    if st.button("📋 Copy", key=f"copy_history_{selected_history}", use_container_width=True):
+                        try:
+                            import pyperclip
+                            pyperclip.copy(history_item['result'])
+                            st.success("✅ Copied!")
+                        except:
+                            st.info("📋 Use code box below")
+                
+                st.code(history_item['result'], language=None)
+    
+
     # Info section
     st.divider()
     with st.expander("ℹ️ About", expanded=False):
@@ -585,7 +663,7 @@ def show_tagger_page():
         - **1120x1120**: 4-tile view (recommended, good detail)
         - **2240x2240**: 16-tile view (maximum detail, slower)
         """)
-    
+
     # Footer
     st.divider()
     st.markdown("""
