@@ -379,7 +379,7 @@ def show_tagger_page():
             for idx, uploaded_file in enumerate(uploaded_files):
                 with thumbnail_cols[idx % 3]:
                     img = Image.open(uploaded_file).convert("RGB")
-                    st.image(img, caption=f"Image {idx+1}", use_container_width=True)
+                    st.image(img, caption=f"Image {idx+1}",  width=150,use_container_width=False)
                     st.caption(f"Size: {img.size[0]}×{img.size[1]}")
         
         st.divider()

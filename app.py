@@ -510,21 +510,13 @@ with col1:
             )
     else:
         # Custom prompt input
-        # Check if there's a generated prompt from Quick Prompt Generator
-        default_value = st.session_state.get('quick_generated_prompt', '')
         prompt = st.text_area(
             "Image Prompt",
-            value=default_value,
             height=150,
             placeholder="Describe the image you want to generate...",
             help="Enter a detailed description of the image you want to create",
             key="custom_prompt"
         )
-        # Clear the quick generated prompt after using it
-        if 'quick_generated_prompt' in st.session_state and default_value:
-            if st.button("🗑️ Clear", key="clear_quick_prompt"):
-                del st.session_state['quick_generated_prompt']
-                st.rerun()
     
     # Reference images upload
     st.subheader("Reference Images (Optional)")
@@ -546,7 +538,7 @@ with col1:
             reference_images.append(img)
             
             with ref_cols[idx % 3]:
-                st.image(img, caption=f"Ref {idx+1}", use_container_width=True)
+                st.image(img, caption=f"Ref {idx+1}", width=150, use_container_width=False)
                 st.caption(f"Size: {img.size[0]}×{img.size[1]}")
     else:
         reference_images = None
@@ -793,13 +785,12 @@ with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
                     )
                     
                     st.success("✅ Prompt generated!")
+                    
+                    # Display result in text area (editable)
                     st.text_area("Generated Result", value=result, height=200, key="qpg_result")
                     
-                    # Button to use this prompt in the main generator
-                    if st.button("📋 Copy", use_container_width=True, key="qpg_copy"):
-                        st.session_state.quick_generated_prompt = result
-                        copy(result)
-                        st.rerun()
+                    # Display result in a code block with built-in copy button
+                    st.code(result, language=None)
                     
                     # Download button
                     st.download_button(
@@ -807,6 +798,7 @@ with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
                         data=result,
                         file_name="generated_prompt.txt",
                         mime="text/plain",
+                        use_container_width=True,
                         key="qpg_download"
                     )
                     
@@ -817,66 +809,68 @@ with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
 
 
 # Generation History
+
 if st.session_state.generated_images:
     st.divider()
     st.header("📜 Generation History")
     
-    for idx, item in enumerate(st.session_state.generated_images[:5]):
-        with st.expander(f"**{item['timestamp']}** - {item['model']}", expanded=(idx == 0)):
-            cols = st.columns([1, 2])
-            with cols[0]:
-                st.image(item['image'], use_container_width=True)
-            with cols[1]:
-                st.write("**Prompt:**")
-                st.write(item['prompt'])
-                st.write(f"**Model:** {item['model']}")
-                st.write(f"**Seed:** {item.get('seed', 'N/A')}")
-                # st.write(f"**Aspect Ratio:** {item.get('aspect_ratio', 'N/A')}")
-                st.write(f"**Reference Images:** {len(item.get('reference_images', [])) if item.get('reference_images') else 0}")
-                
-                # Download buttons
-                dl_cols = st.columns(2)
-                
-                with dl_cols[0]:
-                    # Download from history
-                    buf = BytesIO()
-                    # in the image metadata must be saved the prompt info and model and seed
-                    metadata = PngImagePlugin.PngInfo()
-                    metadata.add_text("Prompt", item['prompt'])
-                    metadata.add_text("Model", item['model'])
-                    metadata.add_text("Seed", str(item.get('seed', 'N/A')))
-                    # metadata.add_text("Aspect_Ratio", item.get('aspect_ratio', 'N/A'))
-                    metadata.add_text("Timestamp", item['timestamp'])
+    with st.expander("Expand Generation History", expanded=False):
+        for idx, item in enumerate(st.session_state.generated_images[:5]):
+            with st.expander(f"**{item['timestamp']}** - {item['model']}", expanded=(idx == 0)):
+                cols = st.columns([1, 2])
+                with cols[0]:
+                    st.image(item['image'], use_container_width=True)
+                with cols[1]:
+                    st.write("**Prompt:**")
+                    st.write(item['prompt'])
+                    st.write(f"**Model:** {item['model']}")
+                    st.write(f"**Seed:** {item.get('seed', 'N/A')}")
+                    # st.write(f"**Aspect Ratio:** {item.get('aspect_ratio', 'N/A')}")
+                    st.write(f"**Reference Images:** {len(item.get('reference_images', [])) if item.get('reference_images') else 0}")
+                    
+                    # Download buttons
+                    dl_cols = st.columns(2)
+                    
+                    with dl_cols[0]:
+                        # Download from history
+                        buf = BytesIO()
+                        # in the image metadata must be saved the prompt info and model and seed
+                        metadata = PngImagePlugin.PngInfo()
+                        metadata.add_text("Prompt", item['prompt'])
+                        metadata.add_text("Model", item['model'])
+                        metadata.add_text("Seed", str(item.get('seed', 'N/A')))
+                        # metadata.add_text("Aspect_Ratio", item.get('aspect_ratio', 'N/A'))
+                        metadata.add_text("Timestamp", item['timestamp'])
 
-                    item['image'].save(buf, format="PNG", pnginfo=metadata)
-                    st.download_button(
-                        label="📥 Download Image",
-                        data=buf.getvalue(),
-                        file_name=f"history_{idx}.png",
-                        mime="image/png",
-                        key=f"download_history_{idx}"
-                    )
-                
-                with dl_cols[1]:
-                    # Download comparison if reference images exist
-                    if item.get('reference_images'):
-                        comparison_img = create_comparison_image(
-                            item['image'],
-                            item['reference_images'],
-                            prompt=item['prompt'],
-                            model=item['model'],
-                            seed=item.get('seed')
+                        item['image'].save(buf, format="PNG", pnginfo=metadata)
+                        st.download_button(
+                            label="📥 Download Image",
+                            data=buf.getvalue(),
+                            file_name=f"history_{idx}.png",
+                            mime="image/png",
+                            key=f"download_history_{idx}"
                         )
-                        if comparison_img:
-                            buf_comp = BytesIO()
-                            comparison_img.save(buf_comp, format="PNG")
-                            st.download_button(
-                                label="📥 Download Comparison",
-                                data=buf_comp.getvalue(),
-                                file_name=f"comparison_history_{idx}.png",
-                                mime="image/png",
-                                key=f"download_comparison_history_{idx}"
+                    
+                    with dl_cols[1]:
+                        # Download comparison if reference images exist
+                        if item.get('reference_images'):
+                            comparison_img = create_comparison_image(
+                                item['image'],
+                                item['reference_images'],
+                                prompt=item['prompt'],
+                                model=item['model'],
+                                seed=item.get('seed')
                             )
+                            if comparison_img:
+                                buf_comp = BytesIO()
+                                comparison_img.save(buf_comp, format="PNG")
+                                st.download_button(
+                                    label="📥 Download Comparison",
+                                    data=buf_comp.getvalue(),
+                                    file_name=f"comparison_history_{idx}.png",
+                                    mime="image/png",
+                                    key=f"download_comparison_history_{idx}"
+                                )
 
 
 # Footer
