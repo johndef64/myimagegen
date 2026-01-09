@@ -7,11 +7,69 @@ import json
 import os
 
 # Instructions and settings
+json_example = """{
+{
+  "subject": {
+    "description": "A young woman taking a mirror selfie with very long voluminous dark waves and soft wispy bangs",
+    "age": "young adult",
+    "expression": "confident and slightly playful",
+    "hair": {
+      "color": "dark",
+      "style": "very long, voluminous waves with soft wispy bangs"
+    },
+    "clothing": {
+      "top": {
+        "type": "fitted cropped t-shirt",
+        "color": "cream white",
+        "details": "features a large cute anime-style cat face graphic with big blue eyes, whiskers, and a small pink mouth"
+      }
+    },
+    "face": {
+      "preserve_original": true,
+      "makeup": "natural glam makeup with soft pink dewy blush and glossy red pouty lips"
+    }
+  },
+  "accessories": {
+    "earrings": {
+      "type": "gold geometric hoop earrings"
+    },
+    "jewelry": {
+      "waistchain": "silver waistchain"
+    },
+    "device": {
+      "type": "smartphone",
+      "details": "patterned case"
+    }
+  },
+  "photography": {
+    "camera_style": "early-2000s digital camera aesthetic",
+    "lighting": "harsh super-flash with bright blown-out highlights but subject still visible",
+    "angle": "mirror selfie",
+    "shot_type": "tight selfie composition",
+    "texture": "subtle grain, retro highlights, V6 realism, crisp details, soft shadows"
+  },
+  "background": {
+    "setting": "nostalgic early-2000s bedroom",
+    "wall_color": "pastel tones",
+    "elements": [
+      "chunky wooden dresser",
+      "CD player",
+      "posters of 2000s pop icons",
+      "hanging beaded door curtain",
+      "cluttered vanity with lip glosses"
+    ],
+    "atmosphere": "authentic 2000s nostalgic vibe",
+    "lighting": "retro"
+  }
+}
+  """
+
 INSTUCTIONS = {
     "GENERATE_TAGS": "Your task is to generate general descriptive tags for the image. Provide a comma separated list of relevant keywords that capture the main elements, themes, and subjects present in the image. Answer only with the tags, without any additional explanation or description.",
     "GENERATE_DETAILED_TAGS": "Your task is to generate a detailed list of descriptive tags for the image. Provide a comprehensive comma separated list of relevant keywords that capture the main elements, themes, subjects, colors, and notable features present in the image. Answer only with the detailed tags, without any additional explanation or description.",
     "GENERATE_PROMPT": "Your task is to write the textual prompt from this image/photo. the textual prompt must be suitable for image generation models. Answer only with the prompt, without any additional explanation or description.",
     "GENERATE_DETAILED_PROMPT": "Your task is to write a highly detailed textual prompt from this image/photo. the textual prompt must be suitable for image generation models. Include specific details about the scene, subjects, colors, lighting, and any notable features. Answer only with the detailed prompt, without any additional explanation or description.",
+    "GENERATE_JSON_PROMPT": f"Your task is to write a JSON-formatted prompt from this image/photo. The JSON should include fields such as 'description', 'style', 'colors', 'face', 'makeup' and 'clothing' that capture the essence of the image. Answer only with the JSON object, without any additional explanation or description. Promt example: {json_example}",
     "DETAILED_CAPTION": "Your task is to provide a detailed caption for the image, describing its content, context, and any notable features in a clear and informative manner.",
     "MORE_DETAILED_CAPTION": "Your task is to provide an even more detailed caption for the image, elaborating on its content, context, and notable features with greater depth and specificity.",
 }
@@ -202,14 +260,23 @@ def show_tagger_page():
         
         if model_category == "OpenRouter":
             model_options = OPENROUTER_MODELS
+            default_model = "grok4"
         elif model_category == "Groq":
             model_options = GROQ_MODELS
+            default_model = "kimi-k2"
         else:  # X.AI
             model_options = XAI_MODELS
+            default_model = "grok-4"
+
+        model_keys = list(model_options.keys())
+        default_index = model_keys.index(default_model) if default_model in model_keys else 0
+
         
         selected_model_key = st.selectbox(
             "Model",
-            options=list(model_options.keys()),
+            # options=list(model_options.keys()),
+            options=model_keys,
+            index=default_index,
             help="Choose the vision model"
         )
         selected_model = model_options[selected_model_key]
@@ -224,6 +291,7 @@ def show_tagger_page():
             "GENERATE_DETAILED_TAGS": "🏷️ Detailed Tags",
             "GENERATE_PROMPT": "📝 Image Prompt",
             "GENERATE_DETAILED_PROMPT": "📝 Detailed Prompt",
+            "GENERATE_JSON_PROMPT": "📝 JSON Prompt",
             "DETAILED_CAPTION": "📋 Caption",
             "MORE_DETAILED_CAPTION": "📋 Detailed Caption"
         }

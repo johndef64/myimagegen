@@ -1,3 +1,4 @@
+from pyperclip import copy
 import streamlit as st
 from openai import OpenAI
 from datetime import datetime
@@ -19,6 +20,7 @@ st.set_page_config(
 
 # Model definitions
 OPENROUTER_IMAGE_MODELS = {
+    "flux.2-max": "black-forest-labs/flux.2-max",
     "flux.2-pro": "black-forest-labs/flux.2-pro",
     "flux.2-flex": "black-forest-labs/flux.2-flex",
     "gemini-2.5-flash-image": "google/gemini-2.5-flash-image",
@@ -29,6 +31,8 @@ OPENROUTER_IMAGE_MODELS = {
     "riverflow-v2-fast-preview" :"sourceful/riverflow-v2-fast-preview",
     "riverflow-v2-standard-preview" :"sourceful/riverflow-v2-standard-preview",
     "riverflow-v2-max-preview" :"sourceful/riverflow-v2-max-preview",
+
+    "seedream-4.5": "bytedance-seed/seedream-4.5",
 }
 
 ASPECT_RATIOS = {
@@ -215,6 +219,9 @@ def save_image_with_metadata(image, prompt, model_name, seed, aspect_ratio):
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     prompt_short = prompt[:30].replace(" ", "_").replace("\n", "_")
+    # replce all special characters in prompt_short that can interfere with file saving
+    prompt_short = "".join(c for c in prompt_short if c.isalnum() or c in ('_', '-'))
+
     model_name_short = model_name.split("/")[-1]
     
     output_folder = "outputs"
@@ -311,7 +318,7 @@ with st.sidebar:
     st.title("🎨 Image Tools")
     page = st.radio(
         "Navigate",
-        ["Image Generator", "Image Viewer", "Prompt Manager", "Prompt Generator"],
+        ["Image Generator", "Prompt Generator", "Image Viewer", "Prompt Manager"],
         label_visibility="collapsed"
     )
     st.divider()
@@ -503,13 +510,21 @@ with col1:
             )
     else:
         # Custom prompt input
+        # Check if there's a generated prompt from Quick Prompt Generator
+        default_value = st.session_state.get('quick_generated_prompt', '')
         prompt = st.text_area(
             "Image Prompt",
+            value=default_value,
             height=150,
             placeholder="Describe the image you want to generate...",
             help="Enter a detailed description of the image you want to create",
             key="custom_prompt"
         )
+        # Clear the quick generated prompt after using it
+        if 'quick_generated_prompt' in st.session_state and default_value:
+            if st.button("🗑️ Clear", key="clear_quick_prompt"):
+                del st.session_state['quick_generated_prompt']
+                st.rerun()
     
     # Reference images upload
     st.subheader("Reference Images (Optional)")
@@ -675,6 +690,132 @@ with col2:
                     st.error(f"❌ Error: {str(e)}")
                     st.exception(e)
 
+
+
+# Quick Prompt Generator Section
+st.divider()
+st.header("✨ Quick Prompt Generator")
+st.markdown("Generate prompts from images or text for direct use in image generation")
+
+with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
+    qpg_col1, qpg_col2 = st.columns([1, 1])
+    
+    with qpg_col1:
+        # Model selection for prompt generation
+        qpg_provider = st.selectbox(
+            "AI Provider",
+            ["OpenRouter", "Groq", "X.AI (Grok)"],
+            key="qpg_provider"
+        )
+        
+        if qpg_provider == "OpenRouter":
+            from promptgen_page import OPENROUTER_MODELS
+            qpg_models = OPENROUTER_MODELS
+            qpg_default = "grok-4"
+        elif qpg_provider == "Groq":
+            from promptgen_page import GROQ_MODELS
+            qpg_models = GROQ_MODELS
+            qpg_default = "kimi-k2"
+        else:
+            from promptgen_page import XAI_MODELS
+            qpg_models = XAI_MODELS
+            qpg_default = "grok-4"
+        
+        qpg_model_keys = list(qpg_models.keys())
+        qpg_default_idx = qpg_model_keys.index(qpg_default) if qpg_default in qpg_model_keys else 0
+        
+        qpg_model_key = st.selectbox(
+            "Model",
+            options=qpg_model_keys,
+            index=qpg_default_idx,
+            key="qpg_model"
+        )
+        qpg_model = qpg_models[qpg_model_key]
+        
+        # Task selection
+        from promptgen_page import INSTUCTIONS
+        qpg_task = st.selectbox(
+            "Task",
+            options=["GENERATE_PROMPT", "GENERATE_DETAILED_PROMPT", "GENERATE_JSON_PROMPT"],
+            format_func=lambda x: {
+                "GENERATE_PROMPT": "📝 Basic Prompt",
+                "GENERATE_DETAILED_PROMPT": "📝 Detailed Prompt",
+                "GENERATE_JSON_PROMPT": "📝 JSON Prompt"
+            }.get(x, x),
+            key="qpg_task"
+        )
+        
+        # Draft text input
+        qpg_draft = st.text_area(
+            "Draft Text (Optional)",
+            height=100,
+            placeholder="Enter draft text or description...",
+            key="qpg_draft"
+        )
+        
+        # Image upload (no preview)
+        qpg_image = st.file_uploader(
+            "Upload Image (Optional)",
+            type=["png", "jpg", "jpeg", "webp"],
+            key="qpg_image",
+            help="Upload an image to generate prompt from"
+        )
+        
+        qpg_generate = st.button("🚀 Generate Prompt", type="primary", use_container_width=True, key="qpg_gen_btn")
+    
+    with qpg_col2:
+        st.subheader("Generated Prompt")
+        
+        if qpg_generate and (qpg_draft or qpg_image):
+            try:
+                from promptgen_page import TaggerGPT, DEFAULT_SYSTEM_IMAGE_PROMPT, optimize_image
+                
+                with st.spinner(f"Generating with {qpg_model_key}..."):
+                    tagger = TaggerGPT(qpg_model)
+                    
+                    # Build instruction
+                    instruction = INSTUCTIONS[qpg_task]
+                    
+                    if qpg_draft:
+                        instruction = f"{instruction}\n\nContext/Reference text: {qpg_draft}"
+                    
+                    # Process image if provided
+                    processed_img = None
+                    if qpg_image:
+                        img = Image.open(qpg_image).convert("RGB")
+                        processed_img = optimize_image(img, target_size=1120)
+                    
+                    # Generate
+                    result = tagger.chat_completion_prompt(
+                        DEFAULT_SYSTEM_IMAGE_PROMPT,
+                        instruction,
+                        image=processed_img
+                    )
+                    
+                    st.success("✅ Prompt generated!")
+                    st.text_area("Generated Result", value=result, height=200, key="qpg_result")
+                    
+                    # Button to use this prompt in the main generator
+                    if st.button("📋 Copy", use_container_width=True, key="qpg_copy"):
+                        st.session_state.quick_generated_prompt = result
+                        copy(result)
+                        st.rerun()
+                    
+                    # Download button
+                    st.download_button(
+                        "💾 Download Prompt",
+                        data=result,
+                        file_name="generated_prompt.txt",
+                        mime="text/plain",
+                        key="qpg_download"
+                    )
+                    
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+        else:
+            st.info("👈 Enter text or upload an image, then click Generate")
+
+
 # Generation History
 if st.session_state.generated_images:
     st.divider()
@@ -736,6 +877,7 @@ if st.session_state.generated_images:
                                 mime="image/png",
                                 key=f"download_comparison_history_{idx}"
                             )
+
 
 # Footer
 st.divider()
