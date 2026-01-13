@@ -210,7 +210,8 @@ def generate_image(prompt, api_key, model_name, aspect_ratio, seed, reference_im
     
     return None, aspect_ratio
 
-def save_image_with_metadata(image, prompt, model_name, seed, aspect_ratio):
+def save_image_with_metadata(image, prompt, model_name, seed, aspect_ratio,
+                              output_folder="outputs", reduce_quality=False):
     """Save image with metadata to outputs folder"""
     metadata = PngImagePlugin.PngInfo()
     metadata.add_text("Prompt", prompt)
@@ -225,7 +226,6 @@ def save_image_with_metadata(image, prompt, model_name, seed, aspect_ratio):
 
     model_name_short = model_name.split("/")[-1]
     
-    output_folder = "outputs"
     os.makedirs(output_folder, exist_ok=True)
     
     filename = os.path.join(output_folder, f"{prompt_short}_{model_name_short}_{timestamp}.png")
@@ -615,8 +615,12 @@ with col2:
                                     seed=seed
                                 )
                                 if comparison_img:
-                                    comparison_path = saved_path.replace(".png", "_comparison.png")
-                                    comparison_img.save(comparison_path)
+                                    # save comparison as jpeg reducing quality
+                                    comparison_path = saved_path.replace(".png", "_comparison.jpg")
+                                    os.makedirs("outputs/comparisons", exist_ok=True)
+                                    comparison_path = comparison_path.replace("outputs", "outputs/comparisons")
+                                    print("Saving comparison image to:", comparison_path)
+                                    comparison_img.save(comparison_path, format="JPEG", quality=75)
                                     st.success(f"💾 Comparison image saved to: `{comparison_path}`")
                         
                         # Download buttons
