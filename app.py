@@ -94,24 +94,64 @@ def load_prompts_from_json(file_path="prompts.json"):
         return {}
 
 def flatten_json_prompts(prompts_data):
-    """Flatten JSON prompts into a structured list"""
+    """Flatten JSON prompts into section/category/prompt entries (like YAML UI)."""
     flattened = []
-    
+
+    if not isinstance(prompts_data, dict):
+        return flattened
+
+    def dump_prompt(value):
+        return json.dumps(value, indent=2, ensure_ascii=False)
+
+    processed_sections = set()
+
+    def process_section(section_key, section_label):
+        section_data = prompts_data.get(section_key)
+        if not isinstance(section_data, dict):
+            return
+
+        processed_sections.add(section_key)
+
+        # Expect structure: Section -> Category -> PromptName -> prompt dict
+        for category_key, category_value in section_data.items():
+            if isinstance(category_value, dict) and category_value:
+                for prompt_name, prompt_value in category_value.items():
+                    flattened.append({
+                        'section': section_label,
+                        'category': category_key,
+                        'prompt_name': prompt_name,
+                        'prompt': dump_prompt(prompt_value),
+                        'index': 0
+                    })
+            else:
+                # Empty or non-dict category; still surface it
+                flattened.append({
+                    'section': section_label,
+                    'category': category_key,
+                    'prompt_name': category_key,
+                    'prompt': dump_prompt(category_value),
+                    'index': 0
+                })
+
+    # Support both legacy lowercase and new capitalized keys
+    process_section("Create_Prompts", "Create")
+    process_section("create_prompts", "Create")
+    process_section("Edit_Prompts", "Edit")
+    process_section("edit_prompts", "Edit")
+
+    # Anything else at the top level (e.g., DATA) is treated as a standalone entry
     for key, value in prompts_data.items():
-        # Skip 'source' and other metadata keys
-        if key in ['source', 'sources']:
+        if key in processed_sections or key.lower() in ['source', 'sources']:
             continue
-        
-        if isinstance(value, dict):
-            # Convert the entire dict to a readable prompt string
-            prompt_text = json.dumps(value, indent=2, ensure_ascii=False)
-            flattened.append({
-                'section': 'JSON Prompts',
-                'category': key,
-                'prompt': prompt_text,
-                'index': 0
-            })
-    
+
+        flattened.append({
+            'section': 'JSON Prompts',
+            'category': key,
+            'prompt_name': key,
+            'prompt': dump_prompt(value),
+            'index': 0
+        })
+
     return flattened
 
 def flatten_prompts(prompts_data):
@@ -491,34 +531,64 @@ with col1:
     
     if prompt_source == "Load from JSON":
         if st.session_state.flattened_json_prompts:
-            # Display JSON prompts
-            json_categories = sorted(list(set([p['category'] for p in st.session_state.flattened_json_prompts])))
-            
-            selected_category = st.selectbox(
-                "Select Prompt Template",
-                options=json_categories,
-                help="Choose a prompt template from JSON",
-                key="json_category_select"
+            # Mirror YAML selection: Section -> Category -> Prompt
+            sections = {}
+            for item in st.session_state.flattened_json_prompts:
+                section = item.get('section', 'JSON Prompts') or 'JSON Prompts'
+                sections.setdefault(section, []).append(item)
+
+            col_section, col_category = st.columns([1, 2])
+
+            with col_section:
+                section_options = list(sections.keys())
+                selected_section = st.selectbox(
+                    "Section",
+                    options=section_options,
+                    help="Choose between Create or Edit prompts",
+                    key="json_section_select"
+                )
+
+            section_prompts = sections[selected_section]
+            categories = sorted(list(set([p['category'] for p in section_prompts])))
+
+            with col_category:
+                selected_category = st.selectbox(
+                    "Category",
+                    options=categories,
+                    help="Choose a category of prompts",
+                    key="json_category_select"
+                )
+
+            filtered_prompts = [p for p in section_prompts if p['category'] == selected_category]
+
+            prompt_options = ["Select a prompt..."] + [
+                (p.get('prompt_name') or (p['prompt'][:80] + "..." if len(p['prompt']) > 80 else p['prompt']))
+                for p in filtered_prompts
+            ]
+
+            selected_prompt_idx = st.selectbox(
+                "Select Prompt",
+                options=range(len(prompt_options)),
+                format_func=lambda x: prompt_options[x],
+                help="Choose a specific prompt",
+                key="json_prompt_select"
             )
-            
-            # Filter prompts by selected category
-            filtered_prompts = [p for p in st.session_state.flattened_json_prompts if p['category'] == selected_category]
-            
-            if filtered_prompts:
-                selected_prompt_obj = filtered_prompts[0]
+
+            if selected_prompt_idx > 0:
+                selected_prompt_obj = filtered_prompts[selected_prompt_idx - 1]
                 prompt = st.text_area(
                     "Selected Prompt (editable)",
                     value=selected_prompt_obj['prompt'],
                     height=200,
-                    key=f"json_prompt_text_{selected_category}",
+                    key="json_prompt_text",
                     help="You can edit the loaded prompt before generating"
                 )
             else:
                 prompt = st.text_area(
                     "Image Prompt",
                     height=200,
-                    placeholder="Select a prompt from the dropdown above...",
-                    help="Select a prompt template from the dropdown",
+                    placeholder="Select a prompt from the dropdowns above...",
+                    help="Select section, category and prompt from the dropdowns",
                     key="empty_json_prompt"
                 )
         else:
