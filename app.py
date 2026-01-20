@@ -20,9 +20,10 @@ st.set_page_config(
 
 # Model definitions
 OPENROUTER_IMAGE_MODELS = {
-    "flux.2-max": "black-forest-labs/flux.2-max",
+    "flux.2-klein-4b":"black-forest-labs/flux.2-klein-4b",
     "flux.2-pro": "black-forest-labs/flux.2-pro",
     "flux.2-flex": "black-forest-labs/flux.2-flex",
+    "flux.2-max": "black-forest-labs/flux.2-max",
     "gemini-2.5-flash-image": "google/gemini-2.5-flash-image",
     "gemini-3-pro-image-preview": "google/gemini-3-pro-image-preview",
     "gpt-5-image-mini": "openai/gpt-5-image-mini",
@@ -79,6 +80,39 @@ def load_prompts_from_yaml(file_path="prompts.yaml"):
     except Exception as e:
         st.error(f"Error loading prompts: {str(e)}")
         return {}
+    
+def load_prompts_from_json(file_path="prompts.json"):
+    """Load prompts from JSON file"""
+    if not os.path.exists(file_path):
+        return {}
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            prompts_data = json.load(f)
+            return prompts_data
+    except Exception as e:
+        st.error(f"Error loading prompts from JSON: {str(e)}")
+        return {}
+
+def flatten_json_prompts(prompts_data):
+    """Flatten JSON prompts into a structured list"""
+    flattened = []
+    
+    for key, value in prompts_data.items():
+        # Skip 'source' and other metadata keys
+        if key in ['source', 'sources']:
+            continue
+        
+        if isinstance(value, dict):
+            # Convert the entire dict to a readable prompt string
+            prompt_text = json.dumps(value, indent=2, ensure_ascii=False)
+            flattened.append({
+                'section': 'JSON Prompts',
+                'category': key,
+                'prompt': prompt_text,
+                'index': 0
+            })
+    
+    return flattened
 
 def flatten_prompts(prompts_data):
     """Flatten nested prompts dictionary into a structured list with categories"""
@@ -189,14 +223,19 @@ def generate_image(prompt, api_key, model_name, aspect_ratio, seed, reference_im
             })
     
     # Make API call
+    PARAM = {
+            "modalities": ["image", "text"],
+            "image_config": {"aspect_ratio": aspect_ratio}
+        }
+    if model_name in ["google/gemini-2.5-flash-image", "google/gemini-3-pro-image-preview"]:
+        PARAM["image_config"]["image_size"] = "2K"
+    print("Generating with params:", PARAM)
+
     response_full = client.chat.completions.create(
         model=model_name,
         messages=[user_message],
         seed=seed,
-        extra_body={
-            "modalities": ["image", "text"],
-            "image_config": {"aspect_ratio": aspect_ratio}
-        }
+        extra_body=PARAM
     )
     
     # Extract generated image
@@ -315,6 +354,10 @@ if 'prompts_data' not in st.session_state:
     prompts_data = load_prompts_from_yaml()
     st.session_state.prompts_data = prompts_data
     st.session_state.flattened_prompts = flatten_prompts(prompts_data)
+if 'json_prompts_data' not in st.session_state:
+    json_prompts_data = load_prompts_from_json()
+    st.session_state.json_prompts_data = json_prompts_data
+    st.session_state.flattened_json_prompts = flatten_json_prompts(json_prompts_data)
 
 # Page Navigation
 with st.sidebar:
@@ -420,6 +463,14 @@ with st.sidebar:
         value=True,
         help="Automatically save images to outputs folder"
     )
+    
+    # Stealth Mode
+    st.divider()
+    stealth_mode = st.checkbox(
+        "🕶️ Stealth Mode",
+        value=False,
+        help="Hide all image thumbnails for privacy"
+    )
 
 # Main content area
 col1, col2 = st.columns([1, 1])
@@ -431,14 +482,56 @@ with col1:
     # Prompt source selector
     prompt_source = st.radio(
         "Prompt Source",
-        options=["Custom Prompt", "Load from YAML"],
+        options=["Custom Prompt", "Load from YAML", "Load from JSON"],
         horizontal=True,
-        help="Choose to write your own prompt or load from prompts.test.yaml"
+        help="Choose to write your own prompt or load from YAML/JSON files"
     )
     
     prompt = ""
     
-    if prompt_source == "Load from YAML":
+    if prompt_source == "Load from JSON":
+        if st.session_state.flattened_json_prompts:
+            # Display JSON prompts
+            json_categories = sorted(list(set([p['category'] for p in st.session_state.flattened_json_prompts])))
+            
+            selected_category = st.selectbox(
+                "Select Prompt Template",
+                options=json_categories,
+                help="Choose a prompt template from JSON",
+                key="json_category_select"
+            )
+            
+            # Filter prompts by selected category
+            filtered_prompts = [p for p in st.session_state.flattened_json_prompts if p['category'] == selected_category]
+            
+            if filtered_prompts:
+                selected_prompt_obj = filtered_prompts[0]
+                prompt = st.text_area(
+                    "Selected Prompt (editable)",
+                    value=selected_prompt_obj['prompt'],
+                    height=200,
+                    key=f"json_prompt_text_{selected_category}",
+                    help="You can edit the loaded prompt before generating"
+                )
+            else:
+                prompt = st.text_area(
+                    "Image Prompt",
+                    height=200,
+                    placeholder="Select a prompt from the dropdown above...",
+                    help="Select a prompt template from the dropdown",
+                    key="empty_json_prompt"
+                )
+        else:
+            st.warning("⚠️ No prompts found in prompts.json")
+            prompt = st.text_area(
+                "Image Prompt",
+                height=200,
+                placeholder="Describe the image you want to generate...",
+                help="Enter a detailed description of the image you want to create",
+                key="custom_prompt_fallback_json"
+            )
+    
+    elif prompt_source == "Load from YAML":
         if st.session_state.flattened_prompts:
             # Group prompts by section
             sections = {}
@@ -542,7 +635,8 @@ with col1:
             reference_images.append(img)
             
             with ref_cols[idx % 3]:
-                st.image(img, caption=f"Ref {idx+1}", width=150, use_container_width=False)
+                if not stealth_mode:
+                    st.image(img, caption=f"Ref {idx+1}", width=150, use_container_width=False)
                 st.caption(f"Size: {img.size[0]}×{img.size[1]}")
     else:
         reference_images = None
@@ -583,7 +677,8 @@ with col2:
                         st.success("✅ Image generated successfully!")
                         
                         # Display image
-                        st.image(generated_image, use_container_width=True)
+                        if not stealth_mode:
+                            st.image(generated_image, use_container_width=True)
                         
                         # Image info
                         st.info(f"""
@@ -660,18 +755,18 @@ with col2:
                                     )
                         
                         # Show comparison preview if reference images exist
-                        if reference_images:
-                            with st.expander("👁️ View Comparison", expanded=False):
-                                comparison_img = create_comparison_image(
-                                    generated_image, 
-                                    reference_images,
-                                    prompt=prompt,
-                                    model=selected_model,
-                                    seed=seed
-                                )
-                                if comparison_img:
-                                    st.image(comparison_img, caption="Reference(s) → Generated", use_container_width=True)
-                        
+                        # if reference_images and not stealth_mode:
+                        with st.expander("👁️ View Comparison", expanded=False):
+                            comparison_img = create_comparison_image(
+                                generated_image, 
+                                reference_images,
+                                prompt=prompt,
+                                model=selected_model,
+                                seed=seed
+                            )
+                            if comparison_img:
+                                st.image(comparison_img, caption="Reference(s) → Generated", use_container_width=True)
+                    
                         # Add to history
                         st.session_state.generated_images.insert(0, {
                             'image': generated_image,
@@ -924,7 +1019,10 @@ if st.session_state.generated_images:
         with st.expander(f"**{item['timestamp']}** - {item['model']}", expanded=(idx == 0)):
             cols = st.columns([1, 2])
             with cols[0]:
-                st.image(item['image'], use_container_width=True)
+                if not stealth_mode:
+                    st.image(item['image'], use_container_width=True)
+                else:
+                    st.info("🕶️ Hidden in Stealth Mode")
             with cols[1]:
                 st.write("**Prompt:**")
                 st.write(item['prompt'])
