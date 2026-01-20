@@ -16,6 +16,7 @@ docs/*
 
 MyImageGen.lnk
 prompts_custom.yaml
+prompts_custom.json
 tagger_focus.json
 api_generator.py
 

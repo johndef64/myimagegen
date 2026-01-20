@@ -1,0 +1,222 @@
+
+{
+  "source": "https://github.com/ZeroLu/awesome-nanobanana-pro",
+
+  "Create_Prompts": {
+
+    "Photo Selfie": {
+        "Bathroom Mirror Selfie": {
+          "subject": {
+            "description": "Young woman taking bathroom mirror selfie, innocent doe eyes but the outfit tells another story",
+            "mirror_rules": "facing mirror, hips slightly angled, close to mirror filling frame",
+            "age": "early 20s",
+            
+            "expression": {
+              "eyes": "big innocent doe eyes looking up through lashes, 'who me?' energy",
+              "mouth": "soft pout, lips slightly parted, maybe tiny tongue touching corner",
+              "brows": "soft, slightly raised, faux innocent",
+              "overall": "angel face but devil body, the contrast is the whole point"
+            },
+            
+            "hair": {
+              "color": "platinum blonde",
+              "style": "messy bun or claw clip, loose strands framing face, effortless"
+            },
+            
+            "body": {
+              "waist": "tiny",
+              "ass": "round, full, fabric of shorts riding up and clinging between cheeks, every curve visible through thin athletic material",
+              "thighs": "thick, soft, shorts barely containing"
+            },
+            
+            "clothing": {
+              "top": {
+                "type": "ULTRA mini crop tee",
+                "color": "yellow",
+                "graphic": "single BANANA logo/graphic",
+                "fit": "barely containing chest, fabric stretched tight, ends just below, shows full stomach"
+              },
+              "bottom": {
+                "type": "tight tennis skort or athletic booty shorts",
+                "color": "white",
+                "material": "thin stretchy athletic fabric",
+                "fit": "vacuum tight, riding up, clinging between cheeks, fabric creases visible, leaving nothing to imagination"
+              }
+            },
+            
+            "face": {
+              "features": "pretty - big eyes, small nose, full lips",
+              "makeup": "minimal, natural, lip gloss, no-makeup makeup"
+            }
+          },
+          "accessories": {
+            "headwear": {
+              "type": "Goorin Bros cap",
+              "details": "black with animal patch, worn backwards or tilted"
+            },
+            "headphones": {
+              "type": "over-ear white headphones",
+              "position": "around neck"
+            },
+            "device": {
+              "type": "iPhone",
+              "details": "visible in mirror, held at chest level"
+            }
+          },
+
+  "photography": {
+    "camera_style": "casual iPhone mirror selfie, NOT professional",
+    "quality": "iPhone camera - good but not studio, realistic social media quality",
+    "angle": "eye-level, straight on mirror",
+    "shot_type": "3/4 body, close to mirror",
+    "aspect_ratio": "9:16 vertical",
+    "texture": "natural, slightly grainy iPhone look, not over-processed"
+  },
+
+  "environment": {
+    "setting": "regular apartment bathroom",
+    "style": "normal NYC apartment bathroom, not luxury",
+    "elements": [
+      "white subway tile walls",
+      "basic bathroom mirror with good lighting above",
+      "simple white sink vanity",
+      "toiletries visible - skincare bottles, toothbrush holder",
+      "towel hanging on hook",
+      "maybe shower curtain edge visible",
+      "small plant on counter"
+    ],
+    "atmosphere": "real bathroom, lived-in, normal home",
+    "lighting": "good vanity lighting above mirror - bright, even, flattering but not studio"
+  },
+
+  "vibe": {
+    "energy": "innocent face + sinful body = the whole game",
+    "mood": "just got ready for tennis but making content first, 'what?' expression while wearing basically nothing",
+    "contrast": "doe eyes + ass eating the shorts = lethal",
+    "caption_energy": "'tennis anyone? 🍌' or 'running late oops'"
+  }
+        }
+      }
+
+  },
+  "Edit_Prompts": {
+
+    "Photo Edit":{
+      "Low quality photo enhancemnet": {
+  "task":  "Enhance the quality of the low-resolution, blurry, noisy, or pixelated photo to make it high-resolution, sharp, clear, and detailed while preserving the original content and composition of the image.",
+  "subject": {
+    "face": {
+      "preserve_original": true,
+      "reference_match": true,
+      "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image.",
+      "red_eyes": "remove any red-eye effect if present"
+    },
+    "constraints": {
+      "facial_identity": "Match reference image exactly 100%",
+      "face_edits": "None allowed"
+    }
+  },
+  "photography": {
+      "style": "high-resolution 4K photograph, ultra-detailed, realistic textures, sharp focus",
+      "quality": "enhanced from low-quality to high-quality",
+      "lighting": "improved lighting and contrast"
+    }
+    
+        }
+
+    },
+    "Background Change": {},
+
+    "Photo Creation": {
+
+      "Portrait with Puppy in Snow":{
+        "image_description": {
+          "subject": {
+            "face": {
+              "preserve_original": true,
+              "reference_match": true,
+              "description": "The girl's facial features, expression, and identity must remain exactly the same as the reference image."
+            },
+            "girl": {
+              "age": "young",
+              "hair": "long, wavy brown hair",
+              "expression": "puckering her lips toward the camera",
+              "clothing": "black hooded sweatshirt"
+            },
+            "puppy": {
+              "type": "small white puppy",
+              "eyes": "light blue",
+              "expression": "calm, looking forward"
+            }
+          },
+          "environment": {
+            "setting": "outdoors in a winter scene",
+            "elements": [
+              "snow covering the ground",
+              "bare trees in the environment",
+              "blurred silver car behind the girl"
+            ],
+            "sky": "clear light blue sky"
+          },
+          "mood": "cute, natural, winter outdoor moment",
+          "camera_style": "soft depth of field, natural daylight, subtle winter tones"
+        }
+      },
+
+      "Canon IXUS Aesthetic Portrait":{
+        "image_parameters": {
+          "style": "Canon IXUS aesthetic",
+          "type": "Point-and-shoot photography",
+          "quality": "Hyper-realistic",
+          "tone": "Sharp, direct",
+          "lighting_and_atmosphere": "Realistic, flash-style/direct lighting"
+        },
+        "subject": {
+          "constraints": {
+            "facial_identity": "Match reference image exactly 100%",
+            "face_edits": "None allowed"
+          },
+          "hair": {
+            "style": "Long, natural, lightly messy layered look",
+            "movement": "Blowing gently in the wind",
+            "details": "Strands slightly covering part of face"
+          },
+          "makeup": {
+            "cheeks_and_nose": "Soft pink blush with blurred effect",
+            "lips": "Subtle pink-orange tinted outline"
+          },
+          "expression": [
+            "Cute",
+            "Naive",
+            "Cheerful",
+            "Slightly sexy/undone charm"
+          ],
+          "pose": {
+            "body_position": "Half-sitting, half-standing",
+            "action": "Flicking hair"
+          },
+          "clothing": {
+            "top": "Black strapless top",
+            "bottom": "Low-waisted jeans with a floating waistline",
+            "neck": "Thin black fabric choker/wrap"
+          },
+          "accessories": [
+            "Small pendant necklace",
+            "Gold watch"
+          ]
+        },
+        "environment": {
+          "setting": "Modern pub",
+          "foreground_props": [
+            "Round table",
+            "Bottle of liquor",
+            "Glass of liquor"
+          ]
+        }
+      }
+
+    }
+
+  }
+
+}

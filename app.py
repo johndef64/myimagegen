@@ -85,6 +85,8 @@ def load_prompts_from_json(file_path="prompts.json"):
     """Load prompts from JSON file"""
     if not os.path.exists(file_path):
         return {}
+    if os.path.exists("prompts_custom.json"):
+        file_path = "prompts_custom.json"
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             prompts_data = json.load(f)
