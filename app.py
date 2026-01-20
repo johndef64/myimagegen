@@ -6,7 +6,7 @@ import random
 from io import BytesIO
 import base64
 import os
-from PIL import Image, PngImagePlugin
+from PIL import Image, ImageOps, PngImagePlugin
 import json
 import yaml
 
@@ -703,7 +703,9 @@ with col1:
         reference_images = []
         
         for idx, uploaded_file in enumerate(uploaded_files):
-            img = Image.open(uploaded_file).convert("RGB")
+            img = Image.open(uploaded_file)
+            img = ImageOps.exif_transpose(img)  # Fix orientation from EXIF data
+            img = img.convert("RGB")
             reference_images.append(img)
             
             with ref_cols[idx % 3]:
