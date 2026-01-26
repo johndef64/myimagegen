@@ -65,12 +65,14 @@ def load_api_key():
             return ""
     return ""
 
-def load_prompts_from_yaml(file_path="prompts/prompts.yaml"):
+def load_prompts_from_yaml(file_path="prompts.yaml"):
+    root_path = "prompts/"
+    file_path = os.path.join(root_path, file_path)
     """Load prompts from YAML file"""
     if not os.path.exists(file_path):
         return {}
-    if os.path.exists("prompts/prompts_custom.yaml"):
-        file_path = "prompts/prompts_custom.yaml"
+    # if os.path.exists("prompts/prompts_custom.yaml"):
+    #     file_path = "prompts/prompts_custom.yaml"
     try:
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -476,11 +478,12 @@ with st.sidebar:
     aspect_ratio = ASPECT_RATIOS[aspect_ratio_display]
     
 
-    PROMPTS_FILES = {"base": "prompts.json",
-                     "custom": "prompts_custom.json",
-                     "assets": "prompts_assets.json"}
+    PROMPTS_FILES = {"base": "prompts",
+                     "custom": "prompts_custom",
+                     "assets": "prompts_assets"}
 
-    default_prompts = "custom" if os.path.exists("prompts/prompts_custom.json") else "base"
+    # Check if custom prompts file exists (either .json or .yaml)
+    default_prompts = "custom" if (os.path.exists("prompts/prompts_custom.json") or os.path.exists("prompts/prompts_custom.yaml")) else "base"
 
     # Prompt Files
     st.subheader("Prompt Source Settings")
@@ -551,7 +554,7 @@ with col1:
     
     if prompt_source == "Load from JSON":
         # reload ech time st.session_state.flattened_json_prompts
-        json_prompts_data = load_prompts_from_json(PROMPTS_FILES[selected_prompts])
+        json_prompts_data = load_prompts_from_json(PROMPTS_FILES[selected_prompts] + ".json")
         st.session_state.json_prompts_data = json_prompts_data
         st.session_state.flattened_json_prompts = flatten_json_prompts(json_prompts_data)
 
@@ -628,6 +631,9 @@ with col1:
             )
     
     elif prompt_source == "Load from YAML":
+        prompts_data = load_prompts_from_yaml(f"{PROMPTS_FILES[selected_prompts]}.yaml")
+        st.session_state.prompts_data = prompts_data
+
         if st.session_state.prompts_data:
             prompts_data = st.session_state.prompts_data
             
