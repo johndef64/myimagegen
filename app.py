@@ -65,12 +65,12 @@ def load_api_key():
             return ""
     return ""
 
-def load_prompts_from_yaml(file_path="prompts.yaml"):
+def load_prompts_from_yaml(file_path="prompts/prompts.yaml"):
     """Load prompts from YAML file"""
     if not os.path.exists(file_path):
         return {}
-    if os.path.exists("prompts_custom.yaml"):
-        file_path = "prompts_custom.yaml"
+    if os.path.exists("prompts/prompts_custom.yaml"):
+        file_path = "prompts/prompts_custom.yaml"
     try:
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -82,11 +82,13 @@ def load_prompts_from_yaml(file_path="prompts.yaml"):
         return {}
     
 def load_prompts_from_json(file_path="prompts.json"):
+    root_path = "prompts/"
+    file_path = os.path.join(root_path, file_path)
     """Load prompts from JSON file"""
     if not os.path.exists(file_path):
         return {}
-    if os.path.exists("prompts_custom.json"):
-        file_path = "prompts_custom.json"
+    # if os.path.exists("prompts/prompts_custom.json"):
+    #     file_path = "prompts/prompts_custom.json"
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             prompts_data = json.load(f)
@@ -473,6 +475,22 @@ with st.sidebar:
     )
     aspect_ratio = ASPECT_RATIOS[aspect_ratio_display]
     
+
+    PROMPTS_FILES = {"base": "prompts.json",
+                     "custom": "prompts_custom.json",
+                     "assets": "prompts_assets.json"}
+
+    default_prompts = "custom" if os.path.exists("prompts/prompts_custom.json") else "base"
+
+    # Prompt Files
+    st.subheader("Prompt Source Settings")
+    selected_prompts= st.selectbox(
+        "Prompts Source",
+        options=list(PROMPTS_FILES.keys()),
+        index=list(PROMPTS_FILES.keys()).index(default_prompts),
+        help="Choose the prompt file to use"
+    )
+
     # Seed
     st.subheader("Generation Parameters")
     use_random_seed = st.checkbox("Use random seed", value=True)
@@ -532,6 +550,12 @@ with col1:
     prompt = ""
     
     if prompt_source == "Load from JSON":
+        # reload ech time st.session_state.flattened_json_prompts
+        json_prompts_data = load_prompts_from_json(PROMPTS_FILES[selected_prompts])
+        st.session_state.json_prompts_data = json_prompts_data
+        st.session_state.flattened_json_prompts = flatten_json_prompts(json_prompts_data)
+
+        
         if st.session_state.flattened_json_prompts:
             # Mirror YAML selection: Section -> Category -> Prompt
             sections = {}
