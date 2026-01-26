@@ -628,69 +628,133 @@ with col1:
             )
     
     elif prompt_source == "Load from YAML":
-        if st.session_state.flattened_prompts:
-            # Group prompts by section
-            sections = {}
-            for item in st.session_state.flattened_prompts:
-                section = item['section']
-                if section not in sections:
-                    sections[section] = []
-                sections[section].append(item)
+        if st.session_state.prompts_data:
+            prompts_data = st.session_state.prompts_data
             
-            # Create a hierarchical selector
-            col_section, col_category = st.columns([1, 2])
+            # Build hierarchical structure: Section -> Category -> Sublevel -> Prompts
+            # Section mapping
+            section_keys = {
+                "Create": "create_prompts",
+                "Edit": "edit_prompts"
+            }
+            available_sections = [s for s, k in section_keys.items() if k in prompts_data]
             
-            with col_section:
-                section_options = list(sections.keys())
-                selected_section = st.selectbox(
-                    "Section",
-                    options=section_options,
-                    help="Choose between Create or Edit prompts"
+            if available_sections:
+                # Create a hierarchical selector with 3 levels
+                col_section, col_category = st.columns([1, 1])
+                
+                with col_section:
+                    selected_section = st.selectbox(
+                        "Section",
+                        options=available_sections,
+                        help="Choose between Create or Edit prompts",
+                        key="yaml_section_select"
+                    )
+                
+                # Get categories for selected section
+                section_key = section_keys[selected_section]
+                section_data = prompts_data.get(section_key, {})
+                categories = list(section_data.keys())
+                
+                with col_category:
+                    selected_category = st.selectbox(
+                        "Category",
+                        options=categories if categories else ["No categories"],
+                        help="Choose a category of prompts",
+                        key="yaml_category_select"
+                    )
+                
+                # Get sublevels for selected category
+                category_data = section_data.get(selected_category, {})
+                
+                # Determine if category_data has sublevels (dict) or is directly a list of prompts
+                if isinstance(category_data, dict):
+                    sublevels = list(category_data.keys())
+                    has_sublevels = True
+                elif isinstance(category_data, list):
+                    sublevels = ["(prompts)"]
+                    has_sublevels = False
+                else:
+                    sublevels = []
+                    has_sublevels = False
+                
+                # Sublevel selector (below section/category)
+                if has_sublevels and sublevels:
+                    selected_sublevel = st.selectbox(
+                        "Sublevel",
+                        options=sublevels,
+                        help="Choose a sublevel of prompts",
+                        key="yaml_sublevel_select"
+                    )
+                else:
+                    selected_sublevel = None
+                
+                # Get prompts based on selection
+                if has_sublevels and selected_sublevel:
+                    sublevel_data = category_data.get(selected_sublevel, [])
+                    # Check if sublevel_data is another dict (4th level nesting) or a list
+                    if isinstance(sublevel_data, dict):
+                        # Handle 4th level: flatten it
+                        prompts_list = []
+                        for sub_key, sub_val in sublevel_data.items():
+                            if isinstance(sub_val, list):
+                                for p in sub_val:
+                                    if isinstance(p, str) and not p.strip().startswith('#'):
+                                        prompts_list.append(p.strip())
+                            elif isinstance(sub_val, str) and not sub_val.strip().startswith('#'):
+                                prompts_list.append(sub_val.strip())
+                    elif isinstance(sublevel_data, list):
+                        prompts_list = [p.strip() for p in sublevel_data if isinstance(p, str) and not p.strip().startswith('#')]
+                    else:
+                        prompts_list = []
+                else:
+                    # No sublevels, category_data is the list of prompts
+                    if isinstance(category_data, list):
+                        prompts_list = [p.strip() for p in category_data if isinstance(p, str) and not p.strip().startswith('#')]
+                    else:
+                        prompts_list = []
+                
+                # Create options for selectbox with preview
+                prompt_options = ["Select a prompt..."] + [
+                    f"{p[:80]}..." if len(p) > 80 else p
+                    for p in prompts_list
+                ]
+                
+                selected_prompt_idx = st.selectbox(
+                    "Select Prompt",
+                    options=range(len(prompt_options)),
+                    format_func=lambda x: prompt_options[x],
+                    help="Choose a specific prompt",
+                    key="yaml_prompt_select"
                 )
-            
-            # Get categories for selected section
-            section_prompts = sections[selected_section]
-            categories = sorted(list(set([p['category'] for p in section_prompts])))
-            
-            with col_category:
-                selected_category = st.selectbox(
-                    "Category",
-                    options=categories,
-                    help="Choose a category of prompts"
-                )
-            
-            # Filter prompts by selected category
-            filtered_prompts = [p for p in section_prompts if p['category'] == selected_category]
-            
-            # Create options for selectbox with preview
-            prompt_options = ["Select a prompt..."] + [
-                f"{p['prompt'][:80]}..." if len(p['prompt']) > 80 else p['prompt']
-                for p in filtered_prompts
-            ]
-            
-            selected_prompt_idx = st.selectbox(
-                "Select Prompt",
-                options=range(len(prompt_options)),
-                format_func=lambda x: prompt_options[x],
-                help="Choose a specific prompt"
-            )
-            
-            if selected_prompt_idx > 0:
-                selected_prompt_obj = filtered_prompts[selected_prompt_idx - 1]
-                prompt = st.text_area(
-                    "Selected Prompt (editable)",
-                    value=selected_prompt_obj['prompt'],
-                    height=150,
-                    key="yaml_prompt_text",
-                    help="You can edit the loaded prompt before generating"
-                )
+                
+                if selected_prompt_idx > 0:
+                    selected_prompt_text = prompts_list[selected_prompt_idx - 1]
+                    # Use dynamic key to force refresh when selection changes
+                    sublevel_key = selected_sublevel if selected_sublevel else "none"
+                    prompt = st.text_area(
+                        "Selected Prompt (editable)",
+                        value=selected_prompt_text,
+                        height=150,
+                        key=f"yaml_prompt_{selected_section}_{selected_category}_{sublevel_key}_{selected_prompt_idx}",
+                        help="You can edit the loaded prompt before generating"
+                    )
+                else:
+                    prompt = st.text_area(
+                        "Image Prompt",
+                        height=150,
+                        placeholder="Select a prompt from the dropdowns above...",
+                        help="Select section, category, sublevel and prompt from the dropdowns",
+                        key="empty_yaml_prompt"
+                    )
             else:
+                st.warning("⚠️ No valid sections found in prompts.yaml")
                 prompt = st.text_area(
                     "Image Prompt",
                     height=150,
-                    placeholder="Select a prompt from the dropdowns above...",
-                    help="Select section, category and prompt from the dropdowns",
-                    key="empty_yaml_prompt"
+                    placeholder="Describe the image you want to generate...",
+                    help="Enter a detailed description of the image you want to create",
+                    key="custom_prompt_fallback_yaml"
                 )
         else:
             st.warning("⚠️ No prompts found in prompts.yaml")
