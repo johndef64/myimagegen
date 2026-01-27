@@ -149,17 +149,11 @@
         },
 
         "Apply Art Style": {
-        "task":  "Edit the subject's image to apply the specified art style, while preserving the subject's facial features and identity."
+        "task":  "Turn this photo into a detailed anime character in the specified art style. Maintain facial features and outfit, but reimagine in art-anime brushwork."
           ,
         "subject": {
           "face": {
-            "preserve_original": true,
-            "reference_match": true,
-            "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
-          },
-          "constraints": {
-            "facial_identity": "Match reference image exactly 100%",
-            "face_edits": "None allowed"
+            "description": "The person's facial features, expression, and identity devno essere riconoscibili nella immagine artistica creata."
           }
         },
           "art_style": {
@@ -169,10 +163,9 @@
             "style": "high-resolution 4K digital art image, ultra-detailed"
           }
         }
-    },
+      },
 
-    "Background Change": {},
-
+    "Background Change":{},
 
     "Photo Creation": {
 
