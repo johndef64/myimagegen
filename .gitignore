@@ -23,3 +23,8 @@ tagger_focus.json
 api_generator.py
 
 README_*
+
+*_dev*
+*_v*.py
+
+src/ocr_test/*
