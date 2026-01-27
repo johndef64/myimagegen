@@ -316,6 +316,7 @@ def save_image_with_metadata(image, prompt, model_name, seed, aspect_ratio,
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     prompt_short = prompt[:30].replace(" ", "_").replace("\n", "_")
+    prompt_short = prompt_short.replace("__", "_")# limit length
     # replce all special characters in prompt_short that can interfere with file saving
     prompt_short = "".join(c for c in prompt_short if c.isalnum() or c in ('_', '-'))
 
@@ -832,7 +833,7 @@ with col1:
             
             with ref_cols[idx % 3]:
                 if not stealth_mode:
-                    st.image(img, caption=f"Ref {idx+1}", width=150, use_container_width=False)
+                    st.image(img, caption=f"Ref {idx+1}", width=150)
                 st.caption(f"Size: {img.size[0]}×{img.size[1]}")
     else:
         reference_images = None
@@ -841,7 +842,7 @@ with col1:
     generate_btn = st.button(
         "🎨 Generate Image",
         type="primary",
-        use_container_width=True,
+        width="stretch",
         disabled=not (prompt and st.session_state.api_key)
     )
 
@@ -874,7 +875,7 @@ with col2:
                         
                         # Display image
                         if not stealth_mode:
-                            st.image(generated_image, use_container_width=True)
+                            st.image(generated_image, width="stretch")
                         
                         # Image info
                         st.info(f"""
@@ -926,7 +927,7 @@ with col2:
                                 data=buf.getvalue(),
                                 file_name=f"generated_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
                                 mime="image/png",
-                                use_container_width=True
+                                width="stretch"
                             )
                         
                         with col_dl2:
@@ -947,7 +948,7 @@ with col2:
                                         data=buf_comp.getvalue(),
                                         file_name=f"comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
                                         mime="image/png",
-                                        use_container_width=True
+                                        width="stretch"
                                     )
                         
                         # Show comparison preview if reference images exist
@@ -961,7 +962,7 @@ with col2:
                                 seed=seed
                             )
                             if comparison_img:
-                                st.image(comparison_img, caption="Reference(s) → Generated", use_container_width=True)
+                                st.image(comparison_img, caption="Reference(s) → Generated", width="stretch")
                     
                         # Add to history
                         st.session_state.generated_images.insert(0, {
@@ -1070,7 +1071,7 @@ with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
             help="Upload an image to generate prompt from"
         )
         
-        qpg_generate = st.button("🚀 Generate Prompt", type="primary", use_container_width=True, key="qpg_gen_btn")
+        qpg_generate = st.button("🚀 Generate Prompt", type="primary", width="stretch", key="qpg_gen_btn")
     
     with qpg_col2:
         st.subheader("Generated Prompt")
@@ -1135,7 +1136,7 @@ with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
             # Display result in text area (editable)
             st.text_area("Generated Result", value=result_prompt, height=200, key=f"qpg_result_{prompt_hash}")
 
-            if st.button("📋 Copy", key="copy_generated_result", use_container_width=True):
+            if st.button("📋 Copy", key="copy_generated_result", width="stretch"):
                 try:
                     import pyperclip
                     pyperclip.copy(st.session_state['last_generated_prompt'])
@@ -1151,7 +1152,7 @@ with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
                 data=result_prompt,
                 file_name="generated_prompt.txt",
                 mime="text/plain",
-                use_container_width=True,
+                width="stretch",
                 key="qpg_download"
             )
         elif not qpg_generate:
@@ -1180,7 +1181,7 @@ if st.session_state.prompt_history:
         )
     
     with hist_col2:
-        if st.button("🗑️ Clear Prompt History", use_container_width=True):
+        if st.button("🗑️ Clear Prompt History", width="stretch"):
             st.session_state.prompt_history = []
             st.rerun()
     
@@ -1219,7 +1220,7 @@ if st.session_state.prompt_history:
                 st.caption(f"**Source:** {source}")
                 
                 # Copy button
-                if st.button("📋 Copy", key=f"copy_hist_{selected_hist_idx}", use_container_width=True):
+                if st.button("📋 Copy", key=f"copy_hist_{selected_hist_idx}", width="stretch"):
                     try:
                         import pyperclip
                         pyperclip.copy(hist_item['result'])
@@ -1243,7 +1244,7 @@ if st.session_state.generated_images:
             cols = st.columns([1, 2])
             with cols[0]:
                 if not stealth_mode:
-                    st.image(item['image'], use_container_width=True)
+                    st.image(item['image'], width="stretch")
                 else:
                     st.info("🕶️ Hidden in Stealth Mode")
             with cols[1]:

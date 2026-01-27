@@ -162,6 +162,56 @@
           "image": {
             "style": "high-resolution 4K digital art image, ultra-detailed"
           }
+        },
+
+                "Apply Pose": {
+        "task":  "Edit only the subject's pose, while preserving the whole reference image, facial features and identity. Change only the pose of the subject."
+          ,
+        "subject": {
+          "face": {
+            "preserve_original": true,
+            "reference_match": true,
+            "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
+          },
+          "constraints": {
+            "facial_identity": "Match reference image exactly 100%",
+            "face_edits": "None allowed"
+          },
+          "pose": {
+              "edit": "Change the pose of this person to the specified pose.",
+              "pose_description": "DESCRIBE_THE_POSE_HERE"
+          }
+        },
+          "photography": {
+            "style": "high-resolution 4K photograph, ultra-detailed, realistic textures, sharp focus",
+            "quality": "realistic social media quality, sharp focus on face and hands",
+            "lighting": "natural lighting"
+          }
+        },
+
+        "Apply Pose and Camera Angle": {
+        "task":  "Edit only the subject's pose and camera angle, while preserving the whole reference image, facial features and identity. Change only the pose of the subject and the camera angle of the photo."
+          ,
+        "subject": {
+          "face": {
+            "preserve_original": true,
+            "reference_match": true,
+            "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
+          },
+          "constraints": {
+            "facial_identity": "Match reference image exactly 100%",
+            "face_edits": "None allowed"
+          },
+          "pose_and_camera": {
+              "edit": "Change the pose of this person anf the camera angle of the photo.",
+              "pose_and_camera_description": "DESCRIBE_THE_POSE_HERE"
+          }
+        },
+          "photography": {
+            "style": "high-resolution 4K photograph, ultra-detailed, realistic textures, sharp focus",
+            "quality": "realistic social media quality, sharp focus on face and hands",
+            "lighting": "natural lighting"
+          }
         }
       },
 

@@ -387,7 +387,7 @@ def show_tagger_page():
             for idx, uploaded_file in enumerate(uploaded_files):
                 with thumbnail_cols[idx % 3]:
                     img = Image.open(uploaded_file).convert("RGB")
-                    st.image(img, caption=f"Image {idx+1}",  width=150,use_container_width=False)
+                    st.image(img, caption=f"Image {idx+1}",  width=150)
                     st.caption(f"Size: {img.size[0]}×{img.size[1]}")
         
         st.divider()
@@ -409,7 +409,7 @@ def show_tagger_page():
         process_btn = st.button(
             "🚀 Generate",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=not can_generate
         )
     
@@ -500,7 +500,7 @@ def show_tagger_page():
                         
                         # Show preview
                         with st.expander("🖼️ View Image", expanded=False):
-                            st.image(img, use_container_width=True)
+                            st.image(img, width="stretch")
                         
                         # Optimize or resize image
                         if optimize_images:
@@ -562,7 +562,7 @@ def show_tagger_page():
                         data=export_text,
                         file_name="tagger_results.txt",
                         mime="text/plain",
-                        use_container_width=True
+                        width="stretch"
                     )
                 
             except Exception as e:
@@ -595,7 +595,7 @@ def show_tagger_page():
             )
         
         with history_cols[1]:
-            if st.button("🗑️ Clear All History", help="Clear all prompt history", use_container_width=True):
+            if st.button("🗑️ Clear All History", help="Clear all prompt history", width="stretch"):
                 st.session_state.prompt_history = []
                 st.rerun()
         
@@ -619,7 +619,7 @@ def show_tagger_page():
                     st.caption(f"**Time:** {history_item['timestamp']}")
                     
                     # Copy button for history item
-                    if st.button("📋 Copy", key=f"copy_history_{selected_history}", use_container_width=True):
+                    if st.button("📋 Copy", key=f"copy_history_{selected_history}", width="stretch"):
                         try:
                             import pyperclip
                             pyperclip.copy(history_item['result'])
