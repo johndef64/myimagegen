@@ -8,6 +8,7 @@ import base64
 import os
 from PIL import Image, ImageOps, PngImagePlugin
 import json
+from tomlkit import key
 import yaml
 
 # Page configuration
@@ -605,11 +606,13 @@ with col1:
 
             if selected_prompt_idx > 0:
                 selected_prompt_obj = filtered_prompts[selected_prompt_idx - 1]
+                # Use dynamic key based on content hash to force refresh
+                json_prompt_hash = hash(selected_prompt_obj['prompt']) % 100000
                 prompt = st.text_area(
                     "Selected Prompt (editable)",
                     value=selected_prompt_obj['prompt'],
                     height=200,
-                    key="json_prompt_text",
+                    key=f"json_prompt_text_{json_prompt_hash}",
                     help="You can edit the loaded prompt before generating"
                 )
             else:
@@ -996,14 +999,33 @@ with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
         
         # Task selection
         from promptgen_page import INSTUCTIONS
-        qpg_task = st.selectbox(
-            "Task",
-            options=["GENERATE_PROMPT", "GENERATE_DETAILED_PROMPT", "GENERATE_JSON_PROMPT"],
-            format_func=lambda x: {
+        TASK_INSTRUCTIONS = INSTUCTIONS.copy()
+
+        # if the file prompts/additional_tasks.json exists, load additional instructions
+        # Add them all in INSTRUCTIONS
+        import json
+        QPG_TASKS = {
                 "GENERATE_PROMPT": "📝 Basic Prompt",
                 "GENERATE_DETAILED_PROMPT": "📝 Detailed Prompt",
                 "GENERATE_JSON_PROMPT": "📝 JSON Prompt"
-            }.get(x, x),
+            }
+        TASK_OPTIONS = ["GENERATE_PROMPT", "GENERATE_DETAILED_PROMPT", "GENERATE_JSON_PROMPT"]
+        additional_tasks = {}
+        if os.path.exists("prompts/additional_tasks.json"):
+            with open("prompts/additional_tasks.json", "r") as f:
+                additional_tasks = json.load(f)
+            TASK_INSTRUCTIONS.update(additional_tasks)
+
+            for key in additional_tasks.keys():
+                QPG_TASKS[key] = f"📝 {key.replace('_', ' ').title()}"
+                TASK_OPTIONS.append(key)
+
+            
+
+        qpg_task = st.selectbox(
+            "Task",
+            options=TASK_OPTIONS,
+            format_func=lambda x: QPG_TASKS.get(x, x),
             key="qpg_task"
         )
         
@@ -1036,7 +1058,7 @@ with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
                     tagger = TaggerGPT(qpg_model)
                     
                     # Build instruction
-                    instruction = INSTUCTIONS[qpg_task]
+                    instruction = TASK_INSTRUCTIONS[qpg_task]
                     
                     if qpg_draft:
                         instruction = f"{instruction}\n\nContext/Reference text: {qpg_draft}"
@@ -1044,11 +1066,14 @@ with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
                     # Process image if provided
                     processed_img = None
                     if qpg_image:
+                        qpg_image.seek(0)  # Reset file pointer to beginning
                         img = Image.open(qpg_image).convert("RGB")
                         processed_img = optimize_image(img, target_size=1120)
-                    
+                        # Debug: show processed image size
+                        st.image(processed_img, caption=f"Processing: {qpg_image.name}", width=100)
+
                     # Generate
-                    result = tagger.chat_completion_prompt(
+                    result_prompt = tagger.chat_completion_prompt(
                         DEFAULT_SYSTEM_IMAGE_PROMPT,
                         instruction,
                         image=processed_img
@@ -1057,11 +1082,11 @@ with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
                     st.success("✅ Prompt generated!")
                     
                     # Save to session state for immediate access
-                    st.session_state['last_generated_prompt'] = result
+                    st.session_state['last_generated_prompt'] = result_prompt
                     
                     # Save to history
                     prompt_item = {
-                        'result': result,
+                        'result': result_prompt,
                         'task': qpg_task,
                         'model': qpg_model_key,
                         'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1070,15 +1095,20 @@ with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
                     }
                     st.session_state.prompt_history.insert(0, prompt_item)
                     
+
+                    
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
         
         # Display result if available (outside the generate block so it persists)
         if 'last_generated_prompt' in st.session_state and st.session_state['last_generated_prompt']:
-            result = st.session_state['last_generated_prompt']
+            result_prompt = st.session_state['last_generated_prompt']
+            
+            # Use dynamic key based on prompt content hash to force refresh
+            prompt_hash = hash(result_prompt) % 100000
             
             # Display result in text area (editable)
-            st.text_area("Generated Result", value=result, height=200, key="qpg_result")
+            st.text_area("Generated Result", value=result_prompt, height=200, key=f"qpg_result_{prompt_hash}")
 
             if st.button("📋 Copy", key="copy_generated_result", use_container_width=True):
                 try:
@@ -1087,13 +1117,13 @@ with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
                     st.success("✅ Copied!")
                 except Exception as e:
                     # Display result in a code block with built-in copy button
-                    st.code(result, language=None)
+                    st.code(result_prompt, language=None)
                     st.info("⚠️ Pyperclip not available. Use the code box copy button above.")
             
             # Download button
             st.download_button(
                 "💾 Download Prompt",
-                data=result,
+                data=result_prompt,
                 file_name="generated_prompt.txt",
                 mime="text/plain",
                 use_container_width=True,
