@@ -109,7 +109,7 @@ def extract_text_from_image(
                         "content": [
                             {
                                 "type": "text",
-                                "text": "Extract all text from this image. Return only the text content, preserving formatting and structure."
+                                "text": "Extract all text from this image. Return ONLY the text content, preserving formatting and structure. Do not include any additional commentary."
                             },
                             image_content
                         ]
@@ -199,6 +199,8 @@ if __name__ == "__main__":
     
     total_time = time.time() - time_zero
     print(f"Total processing time for {len(image_inputs)*60} images: {total_time:.2f} seconds")
+    # 60 repeta x 4 images = 240 images / seconds 
+    # 240/60 =  4 minutes
 
 
 
