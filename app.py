@@ -411,7 +411,12 @@ with st.sidebar:
     st.title("🎨 Image Tools")
     page = st.radio(
         "Navigate",
-        ["Image Generator", "Prompt Generator", "Image Viewer", "Prompt Manager"],
+        ["Image Generator", 
+         "Prompt Generator", 
+         "Image Viewer", 
+         "Prompt Manager", 
+        #  "Audio Generator"
+         ],
         label_visibility="collapsed"
     )
     st.divider()
@@ -433,6 +438,12 @@ if page == "Prompt Generator":
     import promptgen_page
     promptgen_page.show_tagger_page()
     st.stop()
+
+# if page == "Audio Generator":
+#     # Import and run the audio generator page
+#     import audio_generator_page
+#     audio_generator_page.show_audio_generator_page()
+#     st.stop()
 
 # Main UI
 st.title("🎨 OpenRouter Image Generator")

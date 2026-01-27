@@ -9,6 +9,8 @@ test/*
 
 api_keys*
 
+*.wav
+*.mp3
 
 downloaders/downloads/*
 docs/*

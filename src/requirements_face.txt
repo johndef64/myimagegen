@@ -1,0 +1,13 @@
+# Core (download model files from Hugging Face) [web:21]
+huggingface_hub>=0.20
+
+# Face embedding pipeline (InsightFace + ONNXRuntime) [web:16][web:29]
+insightface>=0.7.3
+onnxruntime>=1.16
+
+# Image I/O [web:25]
+opencv-python-headless>=4.7.0.72
+# opencv-python
+
+# Typical runtime deps (often pulled transitively, but pinning avoids surprises)
+# numpy<2
