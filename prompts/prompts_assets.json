@@ -1,6 +1,11 @@
 
 {
   "source": "https://github.com/ZeroLu/awesome-nanobanana-pro",
+  "metadata": {
+    "version": "1.0",
+    "author": "ZeroLu",
+    "description": "A collection of prompt assets for image generation and editing tasks. Task correlatd to 3D asset creation, image reference for characters, clothing, accessories, environments. Cretaing asset in T-pose frontal and rear for easy rigging and animating."
+  },
 
   "Create_Prompts": {
 
@@ -101,169 +106,134 @@
   },
   "Edit_Prompts": {
 
-    "Photo Edit":{
-      "Low quality photo enhancemnet": {
-          "task":  "Enhance the quality of the low-resolution, blurry, noisy, or pixelated photo to make it high-resolution, sharp, clear, and detailed while preserving the original content and composition of the image.",
-          "subject": {
+    "Make T-Pose (Front/Rear)":{
+        "task": "Put the subject in T-pose, both frontal and rear views, for easy rigging and animating.",
+        "subject": {
             "face": {
               "preserve_original": true,
               "reference_match": true,
-              "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image.",
-              "red_eyes": "remove any red-eye effect if present"
+              "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
             },
             "constraints": {
               "facial_identity": "Match reference image exactly 100%",
-              "face_edits": "None allowed"
-            }
+              "face_edits": "None allowed",
+              "clothing_edits": "None allowed"
+            },
+            "pose": "T-pose, both frontal and rear views, for easy rigging and animating."
           },
-          "photography": {
-              "style": "high-resolution 4K photograph, ultra-detailed, realistic textures, sharp focus",
-              "quality": "enhanced from low-quality to high-quality",
-              "lighting": "improved lighting and contrast"
+        "background": "White or transparent background to isolate the subject.",
+        "style": "Use the same style of the reference image (realistic photography or digital art or 3D rendered creation)"
+    },
+    "Make T-Pose (Front)":{
+        "task": "Put the subject in T-pose, both frontal view, for easy rigging and animating.",
+        "subject": {
+            "face": {
+              "preserve_original": true,
+              "reference_match": true,
+              "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
+            },
+            "constraints": {
+              "facial_identity": "Match reference image exactly 100%",
+              "face_edits": "None allowed",
+              "clothing_edits": "None allowed"
+            },
+            "pose": "T-pose, frontal view only, for easy rigging and animating."
+          },
+        "background": "White or transparent background to isolate the subject.",
+        "style": "Use the same style of the reference image (realistic photography or digital art or 3D rendered creation)"
+    },
+    "Make T-Pose (rear)":{
+        "task": "Put the subject in T-pose, rear view only, for easy rigging and animating.",
+        "subject": {
+            "face": {
+              "preserve_original": true,
+              "reference_match": true,
+              "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
+            },
+            "constraints": {
+              "facial_identity": "Match reference image exactly 100%",
+              "face_edits": "None allowed",
+              "clothing_edits": "None allowed"
+            },
+            "pose": "T-pose, rear view only, for easy rigging and animating."
+          },
+        "background": "White or transparent background to isolate the subject.",
+        "style": "Use the same style of the reference image (realistic photography or digital art or 3D rendered creation)"
+    },
+
+    "Photo Edit":{
+        "Low quality photo enhancemnet": {
+            "task":  "Enhance the quality of the low-resolution, blurry, noisy, or pixelated photo to make it high-resolution, sharp, clear, and detailed while preserving the original content and composition of the image.",
+            "subject": {
+            "face": {
+                "preserve_original": true,
+                "reference_match": true,
+                "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image.",
+                "red_eyes": "remove any red-eye effect if present"
+            },
+            "constraints": {
+                "facial_identity": "Match reference image exactly 100%",
+                "face_edits": "None allowed"
+            }
+            },
+            "photography": {
+                "style": "high-resolution 4K photograph, ultra-detailed, realistic textures, sharp focus",
+                "quality": "enhanced from low-quality to high-quality",
+                "lighting": "improved lighting and contrast"
             }
             
         },
-      "Dress up":{
+        "Dress up":{
         "task":  "Edit only the subject's clothing, while preserving the whole reference image, facial features and identity. Change the clothing to the specified outfit."
-          , 
+            , 
         "subject": {
-          "face": {
+            "face": {
             "preserve_original": true,
             "reference_match": true,
             "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
-          },
-          "constraints": {
+            },
+            "constraints": {
             "facial_identity": "Match reference image exactly 100%",
             "face_edits": "None allowed"
-          },
-          "clothing": {
-              "edit": "Change the outfit of this person to the specified outfit.",
-              "outfit": "DESCRIBE_THE_OUTFIT_HERE"
-          }
+            },
+            "clothing": {
+                "edit": "Change the outfit of this person to the specified outfit.",
+                "outfit": "DESCRIBE_THE_OUTFIT_HERE"
+            }
         },
-          "photography": {
+            "photography": {
             "style": "high-resolution 4K photograph, ultra-detailed, realistic textures, sharp focus",
             "quality": "realistic social media quality, sharp focus on face and hands",
             "lighting": "natural lighting"
-          }
+            }
         },
 
         "Apply Art Style": {
         "task":  "Edit the subject's image to apply the specified art style, while preserving the subject's facial features and identity."
-          ,
+            ,
         "subject": {
-          "face": {
+            "face": {
             "preserve_original": true,
             "reference_match": true,
             "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
-          },
-          "constraints": {
+            },
+            "constraints": {
             "facial_identity": "Match reference image exactly 100%",
             "face_edits": "None allowed"
-          }
+            }
         },
-          "art_style": {
-              "style": "DESCRIBE_THE_ART_STYLE_HERE"
-          },
-          "image": {
+            "art_style": {
+                "style": "DESCRIBE_THE_ART_STYLE_HERE"
+            },
+            "image": {
             "style": "high-resolution 4K digital art image, ultra-detailed"
-          }
+            }
         }
     },
 
-    "Background Change": {},
-
-
-    "Photo Creation": {
-
-      "Portrait with Puppy in Snow":{
-        "image_description": {
-          "subject": {
-            "face": {
-              "preserve_original": true,
-              "reference_match": true,
-              "description": "The girl's facial features, expression, and identity must remain exactly the same as the reference image."
-            },
-            "girl": {
-              "age": "young",
-              "hair": "long, wavy brown hair",
-              "expression": "puckering her lips toward the camera",
-              "clothing": "black hooded sweatshirt"
-            },
-            "puppy": {
-              "type": "small white puppy",
-              "eyes": "light blue",
-              "expression": "calm, looking forward"
-            }
-          },
-          "environment": {
-            "setting": "outdoors in a winter scene",
-            "elements": [
-              "snow covering the ground",
-              "bare trees in the environment",
-              "blurred silver car behind the girl"
-            ],
-            "sky": "clear light blue sky"
-          },
-          "mood": "cute, natural, winter outdoor moment",
-          "camera_style": "soft depth of field, natural daylight, subtle winter tones"
-        }
-      },
-
-      "Canon IXUS Aesthetic Portrait":{
-        "image_parameters": {
-          "style": "Canon IXUS aesthetic",
-          "type": "Point-and-shoot photography",
-          "quality": "Hyper-realistic",
-          "tone": "Sharp, direct",
-          "lighting_and_atmosphere": "Realistic, flash-style/direct lighting"
-        },
-        "subject": {
-          "constraints": {
-            "facial_identity": "Match reference image exactly 100%",
-            "face_edits": "None allowed"
-          },
-          "hair": {
-            "style": "Long, natural, lightly messy layered look",
-            "movement": "Blowing gently in the wind",
-            "details": "Strands slightly covering part of face"
-          },
-          "makeup": {
-            "cheeks_and_nose": "Soft pink blush with blurred effect",
-            "lips": "Subtle pink-orange tinted outline"
-          },
-          "expression": [
-            "Cute",
-            "Naive",
-            "Cheerful",
-            "Slightly sexy/undone charm"
-          ],
-          "pose": {
-            "body_position": "Half-sitting, half-standing",
-            "action": "Flicking hair"
-          },
-          "clothing": {
-            "top": "Black strapless top",
-            "bottom": "Low-waisted jeans with a floating waistline",
-            "neck": "Thin black fabric choker/wrap"
-          },
-          "accessories": [
-            "Small pendant necklace",
-            "Gold watch"
-          ]
-        },
-        "environment": {
-          "setting": "Modern pub",
-          "foreground_props": [
-            "Round table",
-            "Bottle of liquor",
-            "Glass of liquor"
-          ]
-        }
-      }
+    "Background Change": {}
 
     }
 
-  }
 
 }
