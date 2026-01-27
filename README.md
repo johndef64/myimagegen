@@ -84,6 +84,7 @@ Or enter it directly in the sidebar when running the app.
 - **gemini-3-pro-image-preview**: Advanced Gemini model
 - **gpt-5-image-mini**: Compact GPT image model
 - **gpt-5-image**: Full GPT image model
+- **and more ...**
 
 ### Aspect Ratios
 
