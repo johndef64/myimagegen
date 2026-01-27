@@ -164,28 +164,16 @@ if __name__ == "__main__":
 
     # Estrai testo
     time_zero = time.time()
-    for repeat in range(60):
+    for repeat in range(1):
         for image_input in image_inputs:
             print(f"Processing: {image_input}")
             print("-" * 50)
             
-            GROQ_MODELS = [
-                "meta-llama/llama-4-maverick-17b-128e-instruct",
-                "meta-llama/llama-4-scout-17b-16e-instruct",
-                # "meta-llama/llama-prompt-guard-2-22m",
-                # "meta-llama/llama-prompt-guard-2-86m",
-                # "llama-3.1-8b-instant",
-                # "llama-3.3-70b-versatile",
-                # "meta-llama/llama-guard-4-12b",
-                # "openai/gpt-oss-20b",
-                # "openai/gpt-oss-120b"
-            ]
             VLM_MODELS = [
             # Modelli Llama 4 Vision (Top Performance)
             # "meta-llama/llama-4-maverick-17b-128e-instruct",
             "meta-llama/llama-4-scout-17b-16e-instruct"
-        ]
-
+            ]
 
             for model in VLM_MODELS:
                 print(f"Using model: {model}")
@@ -199,10 +187,19 @@ if __name__ == "__main__":
     
     total_time = time.time() - time_zero
     print(f"Total processing time for {len(image_inputs)*60} images: {total_time:.2f} seconds")
+
+
     # 60 repeta x 4 images = 240 images / seconds 
     # 240/60 =  4 minutes
 
+    # Total processing time for 240 images with 1 second sleep: 649.32 seconds - 240 sleeping = 409.32 seconds
+    # time per image = 409.32 / 240 = 1.7055 seconds per image
 
+    # i made 240 requestes in 650 seconds / 60 = 10.83 minutes
+
+    # Cost reported for  Scout usage : 0.03$ --> circa 250 images
+    # diciamo 0.03$ per 12 minutes di running
+    # 60 minutes = 0.15$
 
 # MOnitorate activity 
 # https://console.groq.com/dashboard/usage?tab=activity
