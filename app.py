@@ -271,11 +271,20 @@ def generate_image(prompt, api_key, model_name, aspect_ratio, seed, reference_im
     
     # Make API call
     PARAM = {
-            "modalities": ["image", "text"],
-            "image_config": {"aspect_ratio": aspect_ratio}
-        }
+            #  "modalities": ["image", "text"],
+             "image_config": {
+                "aspect_ratio": aspect_ratio
+            }}
+    
     if model_name in ["google/gemini-2.5-flash-image", "google/gemini-3-pro-image-preview"]:
-        PARAM["image_config"]["image_size"] = "2K"
+        PARAM = {
+            "modalities": ["image", "text"],
+            "image_config": {
+                "aspect_ratio": aspect_ratio,
+                "image_size": "2K"
+            }
+        }
+    
     print("Generating with params:", PARAM)
 
     response_full = client.chat.completions.create(
@@ -615,25 +624,30 @@ with col1:
                 key="json_prompt_select"
             )
 
-            if selected_prompt_idx > 0:
-                selected_prompt_obj = filtered_prompts[selected_prompt_idx - 1]
-                # Use dynamic key based on content hash to force refresh
-                json_prompt_hash = hash(selected_prompt_obj['prompt']) % 100000
-                prompt = st.text_area(
-                    "Selected Prompt (editable)",
-                    value=selected_prompt_obj['prompt'],
-                    height=200,
-                    key=f"json_prompt_text_{json_prompt_hash}",
-                    help="You can edit the loaded prompt before generating"
-                )
-            else:
-                prompt = st.text_area(
-                    "Image Prompt",
-                    height=200,
-                    placeholder="Select a prompt from the dropdowns above...",
-                    help="Select section, category and prompt from the dropdowns",
-                    key="empty_json_prompt"
-                )
+            # Manage prompt text state to allow editing while updating on selection change
+            selection_key = f"{selected_section}_{selected_category}_{selected_prompt_idx}"
+            
+            # Check if selection has changed
+            if 'last_json_selection' not in st.session_state or st.session_state.last_json_selection != selection_key:
+                st.session_state.last_json_selection = selection_key
+                if selected_prompt_idx > 0:
+                    # Update text with selected prompt
+                    st.session_state['json_prompt_input'] = filtered_prompts[selected_prompt_idx - 1]['prompt']
+                else:
+                    # Clear text if no prompt selected
+                    st.session_state['json_prompt_input'] = ""
+            
+            # Initialize if not exists
+            if 'json_prompt_input' not in st.session_state:
+                 st.session_state['json_prompt_input'] = ""
+
+            prompt = st.text_area(
+                "Selected Prompt (editable)" if selected_prompt_idx > 0 else "Image Prompt",
+                key="json_prompt_input",
+                height=200,
+                placeholder="Select a prompt from the dropdowns above or type here...",
+                help="You can edit the loaded prompt before generating"
+            )
         else:
             st.warning("⚠️ No prompts found in prompts.json")
             prompt = st.text_area(
