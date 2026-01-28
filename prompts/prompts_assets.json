@@ -13,6 +13,8 @@
 
   "Edit_Prompts": {
 
+    "Make T-Pose":{
+
     "Make T-Pose (Front/Rear)":{
         "task": "Put the subject in T-pose, both frontal and rear views, for easy rigging and animating.",
         "subject": {
@@ -85,8 +87,8 @@
           },
         "background": "White or transparent background to isolate the subject.",
         "style": "Use the same style of the reference image (realistic photography or digital art or 3D rendered creation)"
-    },
-
+    }
+},
     "Photo Edit":{
         "Low quality photo enhancemnet": {
             "task":  "Enhance the quality of the low-resolution, blurry, noisy, or pixelated photo to make it high-resolution, sharp, clear, and detailed while preserving the original content and composition of the image.",

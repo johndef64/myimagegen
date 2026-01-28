@@ -129,7 +129,7 @@ def show_prompt_manager_page():
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🔄 Reload", use_container_width=True, help="Reload from file (discards unsaved changes)"):
+            if st.button("🔄 Reload", width="stretch", help="Reload from file (discards unsaved changes)"):
                 st.session_state.pm_yaml_data = load_yaml_file()
                 st.session_state.pm_unsaved_changes = False
                 st.success("✅ Reloaded from file")
@@ -137,7 +137,7 @@ def show_prompt_manager_page():
         
         with col2:
             save_disabled = not st.session_state.pm_unsaved_changes
-            if st.button("💾 Save", use_container_width=True, disabled=save_disabled, 
+            if st.button("💾 Save", width="stretch", disabled=save_disabled, 
                         type="primary" if st.session_state.pm_unsaved_changes else "secondary",
                         help="Save changes to prompts.yaml"):
                 if save_yaml_file(st.session_state.pm_yaml_data):
@@ -269,12 +269,12 @@ def show_prompt_manager_page():
                         with col2:
                             # Copy to clipboard
                             st.button(f"📋 Copy", key=f"copy_{section}_{idx}_{prompt_idx}", 
-                                     help="Click to copy prompt", use_container_width=True)
+                                     help="Click to copy prompt", width="stretch")
                         
                         with col3:
                             # Delete prompt
                             if st.button(f"🗑️ Delete", key=f"del_{section}_{idx}_{prompt_idx}", 
-                                        help="Delete this prompt", use_container_width=True):
+                                        help="Delete this prompt", width="stretch"):
                                 current_prompts = get_nested_value(st.session_state.pm_yaml_data[section], category['path'])
                                 current_prompts.pop(prompt_idx)
                                 set_nested_value(st.session_state.pm_yaml_data[section], category['path'], current_prompts)

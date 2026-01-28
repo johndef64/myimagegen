@@ -73,6 +73,8 @@ def show_image_viewer_page():
         st.session_state.viewer_grid_columns = 3
     if 'viewer_sort_by' not in st.session_state:
         st.session_state.viewer_sort_by = "Newest First"
+    if 'viewer_show_comparisons' not in st.session_state:
+        st.session_state.viewer_show_comparisons = False
     
     # Sidebar settings
     with st.sidebar:
@@ -135,6 +137,14 @@ def show_image_viewer_page():
         
         st.divider()
         
+        # Show comparisons toggle
+        show_comparisons = st.checkbox(
+            "Show comparisons",
+            value=st.session_state.viewer_show_comparisons,
+            help="Show images ending with _comparison.jpg"
+        )
+        st.session_state.viewer_show_comparisons = show_comparisons
+        
         # Show metadata toggle
         show_metadata = st.checkbox(
             "Show Image Metadata",
@@ -157,6 +167,10 @@ def show_image_viewer_page():
         filtered_images = [img for img in all_images if img['folder'] == "Root"]
     else:
         filtered_images = [img for img in all_images if img['rel_path'].startswith(selected_folder)]
+    
+    # Filter out comparison images if checkbox is not checked
+    if not st.session_state.viewer_show_comparisons:
+        filtered_images = [img for img in filtered_images if not img['filename'].endswith('_comparison.jpg')]
     
     # Sort images
     if sort_by == "Newest First":
