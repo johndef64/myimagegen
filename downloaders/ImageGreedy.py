@@ -88,6 +88,25 @@ class ClipboardImageDownloader:
             return any(ext in lower_text for ext in image_extensions)
         except Exception:
             return False
+
+    def is_video_url(self, text):
+        """Check if the text is a valid video/audio URL."""
+        try:
+            # Check if it's a URL
+            result = urlparse(text.strip())
+            if not all([result.scheme, result.netloc]):
+                return False
+            
+            # Check if URL includes video/audio extension
+            # User requested "mp3 etc" so including common audio formats too
+            video_extensions = [
+                '.mp4', '.webm', '.mov', '.avi', '.mkv', 
+                '.mp3', '.wav', '.flac', '.ogg', '.m4a'
+            ]
+            lower_text = text.lower()
+            return any(ext in lower_text for ext in video_extensions)
+        except Exception:
+            return False
     
     def download_image_from_url(self, url):
         """Download image from URL."""
@@ -130,6 +149,7 @@ class ClipboardImageDownloader:
         print("Supported formats:")
         print("  - Direct images (Copy Image)")
         print("  - Image URLs (Copy Image Address)")
+        print("  - Video/Audio URLs (Copy Link)")
         print("  - Base64 encoded data")
         print("Press Ctrl+C to stop.")
         
@@ -173,6 +193,29 @@ class ClipboardImageDownloader:
                                 file_type = self.detect_file_type(image_data)
                                 saved_path = self.save_file(image_data, file_type, "url_image")
                                 print(f"✓ Saved: {saved_path} ({len(image_data)} bytes)")
+                                self.last_clipboard = clipboard_content
+                                self.last_image_hash = None
+
+                        # Check if it's a video/audio URL
+                        elif self.is_video_url(clipboard_content):
+                            print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Video/Audio URL detected!")
+                            print(f"URL: {clipboard_content[:80]}...")
+                            
+                            # Download content using the existing downloader method
+                            # Note: This loads the file into memory. OK for small clips.
+                            video_data = self.download_image_from_url(clipboard_content)
+                            if video_data:
+                                # Try to get extension from URL
+                                try:
+                                    path = urlparse(clipboard_content).path
+                                    ext = os.path.splitext(path)[1][1:].lower()
+                                    if not ext:
+                                        ext = 'mp4'
+                                except Exception:
+                                    ext = 'mp4'
+                                
+                                saved_path = self.save_file(video_data, ext, "url_media")
+                                print(f"✓ Saved: {saved_path} ({len(video_data)} bytes)")
                                 self.last_clipboard = clipboard_content
                                 self.last_image_hash = None
                         
