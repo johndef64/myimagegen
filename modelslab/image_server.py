@@ -191,36 +191,37 @@ class ImageServer:
         
         return self.images
 
-# Crea istanza globale
-image_server = ImageServer(port=9999)
+
 
 # Funzioni helper semplici
-def add_image_to_server(image_path):
+def add_image_to_server(image_path, image_server):
     """Aggiunge un'immagine al server e restituisce l'URL"""
     return image_server.add_image(image_path)
 
-def stop_image_server():
+def stop_image_server(image_server):
     """Ferma il server"""
     image_server.stop()
 
-def list_server_images():
+def list_server_images(image_server):
     """Lista tutte le immagini nel server"""
     return image_server.list_images()
 
 
 
 if __name__ == "__main__":
-    img_path = r"G:\Altri computer\Horizon\horizon_workspace\ai-gen\ai-art\myimagegen\images\image_(1).jpg"
-    img_path2 = r"G:\Altri computer\Horizon\horizon_workspace\ai-gen\ai-art\myimagegen\images\image (2).png"
+    # Crea istanza globale
+    image_server = ImageServer(port=9999)
+    img_path = r"G:\Altri computer\Horizon\horizon_workspace\ai-gen\ai-art\myimagegen\images\image_1.jpg"
+    img_path2 = r"G:\Altri computer\Horizon\horizon_workspace\ai-gen\ai-art\myimagegen\images\image_2.png"
+    img_path3 = r"G:\Altri computer\Horizon\horizon_workspace\ai-gen\ai-art\myimagegen\images\image_3.png"
     # Aggiungi più immagini
     url1 = add_image_to_server(img_path)
     url2 = add_image_to_server(img_path2)
-    # url3 = add_image_to_server('/path/to/image3.png')
+    url3 = add_image_to_server(img_path3)
 
     print(url1)    
     print(url2)    
-    # print(url3)  
-
+    print(url3)  
     # # Oppure con PIL Image
     # from PIL import Image
     # img = Image.open('image.jpg')
