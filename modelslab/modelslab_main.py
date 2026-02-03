@@ -11,6 +11,7 @@ from mlslab_utils import *
 print("Working directory:", os.getcwd())
 
 # in quesot folder , in tuittti i nomi dei file elimina gli mspazi
+folder = "../images/fem/bellezze"
 import os
 for filename in os.listdir(folder):
     if ' ' in filename or '_' in filename:
@@ -26,7 +27,6 @@ show_folder_images_thumbnails(folder, max_images=None, thumb_size=(10, 10))
 folder = "../images/"
 handle = "image"
 image_files = get_images_paths(folder, handle=handle)
-
 
 # Percorso della tua immagine locale
 local_image_path = image_files[1]
@@ -47,12 +47,9 @@ prompt = "The person is holding a red apple. Professional photography, high deta
 
 
 
-
 results = []
-# Pay as you go plan 5 queued API requests
-for local_image_path in image_files:
-    
-    print(f"\n---\nModifica immagine: {local_image_path}")
+
+def process_image(local_image_path, prompt):
     try:
         #get with and height
         new_width, new_height, resized_img = resize_image_to_megapixels(local_image_path, target_mp=1.0)
@@ -73,20 +70,42 @@ for local_image_path in image_files:
 
         status = result.get("status", "unknown")
         print(f"✓ Stato richiesta: {status}")
-
         results.append(result)
 
-        print("\n✓ Risultato:")
-        print(result.get("status"))
         # Step 4: Aggiorna il file dei risultati
         update_requests_file(result, urls_file="requests_list.txt")
         time.sleep(1)
+
+        return result
         
     except requests.exceptions.HTTPError as http_err:
         print(f"HTTP error: {http_err}")
         print(f"Response: {http_err.response.text}")
+        return None
     except Exception as err:
         print(f"Errore: {err}")
+        return None
+
+# Pay as you go plan 5 queued API requests
+for local_image_path in image_files:
+    
+    print(f"\n---\nModifica immagine: {local_image_path}")
+    result = process_image(local_image_path, prompt)
+    max_retries = 3
+    retries = 0
+    while not result:
+        print("Errore nella modifica dell'immagine, riprovo.")
+        # retry after 1 second
+        time.sleep(1)
+        result = process_image(local_image_path, prompt)
+        retries += 1
+        if retries >= max_retries:
+            print("Numero massimo di tentativi raggiunto, salto alla successiva.")
+            break
+
+    if result is not None:
+        results.append(result)
+
 #%%
 for res in results:
     status = res.get("status", "unknown")
@@ -110,7 +129,7 @@ for res in results:
             print(f"Image Base64 (first 100 chars): {base64_data[:100]}...")
             # show thumb 50X50
             from IPython.display import display, Image
-            display(Image(data=base64.b64decode(base64_data), width=50, height=50))
+            display(Image(data=base64.b64decode(base64_data), width=20, height=20))
 
             # upadate timed result
             time_end = time.time()
@@ -118,7 +137,14 @@ for res in results:
             print(f"✓ Time taken for request ID {request_id}: {elapsed_time:.2f} seconds")
 
     print(status)
+# 168547166: 107.72 seconds
+# success
+# 168547174: 5.55 seconds
+# success
+# 168547180: 11.35 seconds
+# success
 
+# total time 124.62 seconds for 3 images, in minutes 2.08 minutes
 #%%
 ############################################################
 #update results file
