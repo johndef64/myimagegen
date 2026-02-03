@@ -353,7 +353,7 @@ if __name__ == "__main__":
     show_image_thumbnail_from_base64url(url, size=(200, 200))
 
 #%%
-"""Crea l'immagine usando Qwen con image reference"""
+"""Crea l'immagine con image reference"""
 
 def create_img2img_v6(image_url, 
                       prompt, 
@@ -364,7 +364,9 @@ def create_img2img_v6(image_url,
                       height=1024,
                       seed=4141,
                       num_inference_steps=8,
-                      strength=0.5
+                      strength=0.5,
+                      temp = "yes",
+                      enhance_prompt = "no"
                       ):
     """Crea l'immagine usando Qwen con image reference"""
     elegible_models = [
@@ -377,7 +379,8 @@ def create_img2img_v6(image_url,
                 # "strength": "0.7",
                 # "scheduler": "DPMSolverMultistepScheduler",
                 # "guidance": "2.5",
-                # negative prompt: ' (child:1.5), ((((underage)))), ((((child)))), (((kid))), (((preteen))), (teen:1.5) ugly, tiling, poorly drawn hands, poorly drawn feet, poorly drawn face, out of frame, extra limbs, disfigured, deformed, body out of frame, bad anatomy, watermark, signature, cut off, low contrast, underexposed, overexposed, bad art, beginner, amateur, distorted face, blurry, draft, grainy'
+                # negative prompt (enhanced): ' (child:1.5), ((((underage)))), ((((child)))), (((kid))), (((preteen))), (teen:1.5) ugly, tiling, poorly drawn hands, poorly drawn feet, poorly drawn face, out of frame, extra limbs, disfigured, deformed, body out of frame, bad anatomy, watermark, signature, cut off, low contrast, underexposed, overexposed, bad art, beginner, amateur, distorted face, blurry, draft, grainy'
+                # prompt (enhanced): "hyperrealistic, full body, detailed clothing, highly detailed, cinematic lighting, stunningly beautiful, intricate, sharp focus, f/1. 8, 85mm, (centered image composition), (professionally color graded), ((bright soft diffused light)), volumetric fog, trending on instagram, trending on tumblr, HDR 4K, 8K"
     ]
 
 
@@ -401,7 +404,9 @@ def create_img2img_v6(image_url,
 
             "seed": seed,
             "base64": "yes",
-            "temp": "yes",
+            "temp": temp,
+            'enhance_prompt': enhance_prompt
+
         }
     
     response = requests.post(url, headers=headers, json=data)
@@ -469,13 +474,15 @@ if __name__ == "__main__":
         image_url=test_image_base64_1,  
         prompt=text_prompt,
         api_key=api_key,
-        negative_prompt="((color green)), ((trees and leaves)),((wearing clothes)), ",
+        negative_prompt="((color green)), ((trees and leaves)),((green clothes)), ",
         model_id="flux-kontext-dev",
         width=1024,
         height=1024,
         seed=4141,
-        num_inference_steps=8,
-        strength=0.5
+        num_inference_steps=28,
+        strength=0.7,
+        temp="yes",
+        enhance_prompt="no"
     )
 
 #%%
@@ -499,7 +506,7 @@ if __name__ == "__main__":
 
 #%%
 
-"""Crea l'immagine usando Qwen"""
+"""Crea l'immagine"""
 
 #%%
 # models pricing
