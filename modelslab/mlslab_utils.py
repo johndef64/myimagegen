@@ -86,8 +86,9 @@ def update_urls_file_all(results, urls_file="edited_image_urls.txt"):
 def save_base64_images_in_results(results, folder="edited_images"):
     """Salva le immagini in base64 in file locali"""
     import os
-    if not os.path.exists(folder):
-        os.makedirs(folder)
+    root_folder = os.getcwd()
+    if not os.path.exists(os.path.join(root_folder, folder)):
+        os.makedirs(os.path.join(root_folder, folder))
     timestamp = int(time.time())
     
     for i, res in enumerate(results):
@@ -98,13 +99,14 @@ def save_base64_images_in_results(results, folder="edited_images"):
                     img_base64 = img_base64.split(",")[1]
                 
                 img_data = base64.b64decode(img_base64)
-                file_path = os.path.join(folder, f"edited_image_{i}_{j}_{timestamp}.png")
+                file_path = os.path.join(root_folder, folder, f"edited_image_{i}_{j}_{timestamp}.png")
                 with open(file_path, "wb") as img_file:
                     img_file.write(img_data)
                 print(f"✓ Salvata immagine base64 in: {file_path}")
 
 def save_image_from_base64url(img_url, folder, show_thumb=False):
-    os.makedirs(os.path.dirname(folder), exist_ok=True)
+    root_folder = os.getcwd()
+    os.makedirs(os.path.join(root_folder, folder), exist_ok=True)
     """Salva un'immagine in base64 da un URL in un file locale
     url example:https://pub-3626123a908346a7a8be8d9295f44e26.r2.dev/temp/08a459fd-538e-41a8-9c14-dc009296b37f-0.base64
     """
@@ -122,7 +124,7 @@ def save_image_from_base64url(img_url, folder, show_thumb=False):
         
         img_data = base64.b64decode(base64_data)
 
-        file_path = os.path.join(folder, f"edited_image_{url_id}.png")
+        file_path = os.path.join(root_folder, folder, f"edited_image_{url_id}.png")
 
         with open(file_path, "wb") as img_file:
             img_file.write(img_data)
@@ -502,8 +504,10 @@ if __name__ == "__main__":
 if __name__ == "__main__":
     print("Response:", response)
     url = response.get("future_links", ["no_url"])[0]
-    show_image_thumbnail_from_base64url(url, size=(100, 100))
-
+    request_id = response.get("id", "no_id")
+    # show_image_thumbnail_from_base64url(url, size=(100, 100))
+    save_image_from_base64url(url, folder="img2img_results")
+    save_image_from_requestid_base64(url, request_id, folder="img2img_results")
 #%%
 
 """Crea l'immagine"""
