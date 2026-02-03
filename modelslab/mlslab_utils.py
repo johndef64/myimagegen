@@ -1,3 +1,5 @@
+#%%
+from matplotlib.pylab import seed
 import requests
 import json
 import base64
@@ -101,7 +103,7 @@ def save_base64_images_in_results(results, folder="edited_images"):
                     img_file.write(img_data)
                 print(f"✓ Salvata immagine base64 in: {file_path}")
 
-def save_base64_from_base64url(img_url, folder):
+def save_image_from_base64url(img_url, folder, show_thumb=False):
     os.makedirs(os.path.dirname(folder), exist_ok=True)
     """Salva un'immagine in base64 da un URL in un file locale
     url example:https://pub-3626123a908346a7a8be8d9295f44e26.r2.dev/temp/08a459fd-538e-41a8-9c14-dc009296b37f-0.base64
@@ -125,8 +127,33 @@ def save_base64_from_base64url(img_url, folder):
         with open(file_path, "wb") as img_file:
             img_file.write(img_data)
         print(f"✓ Salvata immagine base64 da URL in: {file_path}")
+        if show_thumb:
+            from IPython.display import display, Image
+            display(Image(filename=file_path, width=100, height=100))
     else:
         print("URL immagine vuoto, impossibile salvare.")
+
+def show_image_thumbnail_from_base64url(img_url, size=(100, 100)):
+    """Mostra un'anteprima di un'immagine in base64 da un URL
+    url example:https://pub-3626123a908346a7a8be8d9295f44e26.r2.dev/temp/08a459fd-538e-41a8-9c14-dc009296b37f-0.base64
+    """
+    import requests
+    if img_url:
+
+        response = requests.get(img_url)
+        response.raise_for_status()
+        base64_data = response.text
+        # Rimuovi il prefisso data URI se presente
+        if base64_data.startswith("data:image"):
+            base64_data = base64_data.split(",")[1]
+        
+        img_data = base64.b64decode(base64_data)
+
+        from IPython.display import display, Image
+        from io import BytesIO
+        display(Image(data=img_data, width=size[0], height=size[1]))
+    else:
+        print("URL immagine vuoto, impossibile mostrare.")
 
 def fetch_queued_image_community(api_key, request_id):
     """
@@ -153,7 +180,7 @@ def fetch_queued_image_community(api_key, request_id):
     response = requests.post(url, headers=headers, data=payload)
     return response.json()
 
-def save_base64_image_from_reqestid(img_url, request_id, folder="fetched_images"):
+def save_image_from_requestid_base64(img_url, request_id, folder="fetched_images"):
     """Salva un'immagine in base64 da un URL in un file locale"""
     import os
     import requests
@@ -221,29 +248,15 @@ def get_images_paths(folder, handle=""):
 """Modifica l'immagine usando Qwen Edit"""
 
 # Rest API example request payload
-# json_request = {
-#   "prompt": "A girl is showing her perfect squared red nails to the camera",
-#   "webhook": null,
-#   "width": 1024,
-#   "height": 1024,
-#   "samples": 1,
-#   "num_inference_steps": 8,
-#   "seed": 4141,
-#   v
-#   "safety_checker": "no",
-#   "safety_checker_type": "black",
-#   "track_id": null,
-#   "base64": "no",
-#   "watermark": "no",
-#   "init_image_1": "https://pub-3626123a908346a7a8be8d9295f44e26.r2.dev/generations/4500897471769798941.png",
-#   "init_image_2": null,
-#   "init_image_3": null,
-#   "init_image_4": null,
-#   "id": 168279749
-# }
 
+from typing import Union
+print(os.getcwd())
 
-def edit_image_with_qwen_base64(image_base64, 
+test_image_base64_1 = encode_image_to_base64("..\\images\\image_1.jpg", resize=1)
+test_image_base64_2 = encode_image_to_base64("..\\images\\image_3.png", resize=1)
+text_prompt = "The subject is walking in a fantasy landscape with a tree next to him, in the style of Studio Ghibli"
+
+def edit_image_with_qwen_base64(image_base64: Union[str, list], 
                          prompt, 
                          api_key,
                          width=1024,
@@ -255,9 +268,60 @@ def edit_image_with_qwen_base64(image_base64,
     
     headers = {"Content-Type": "application/json"}
     print("image_base64:", image_base64[:30]+"...")
+
+    if isinstance(image_base64, list):
+        image_1 = image_base64[0]  # take the first image if list
+        image_2 = image_base64[1] if len(image_base64) > 1 else None
+        image_3 = image_base64[2] if len(image_base64) > 2 else None
+        image_4 = image_base64[3] if len(image_base64) > 3 else None
+    else:
+        image_1 = image_base64
+        image_2 = None
+        image_3 = None
+        image_4 = None
+
     
     data = {
-        "init_image": image_base64,  # base64 string, not URL
+        "init_image_1": image_1,  # base64 string, not URL
+        "init_image_2": image_2,
+        "init_image_3": image_3,
+        "init_image_4": image_4,
+        "prompt": prompt,
+        "key": api_key,
+        "width": width,
+        "height": height,
+        "seed": seed,
+        "base64": "yes",
+        "temp": "yes",
+    }
+    
+    response = requests.post(url, headers=headers, json=data)
+    response.raise_for_status()
+    update_requests_file(response.json(), urls_file="requests_list.txt")
+    return response.json()
+
+def edit_image_with_qwen_edit(image_base64: Union[str, list], 
+                         prompt, 
+                         api_key,
+                         width=1024,
+                         height=1024,
+                         seed=4141
+                         ):
+    """Modifica l'immagine usando Qwen Edit"""
+    url = "https://modelslab.com/api/v6/image_editing/qwen_edit"
+    model_id = "qwen-edit-2511"
+    
+    headers = {"Content-Type": "application/json"}
+    
+
+    if isinstance(image_base64, list):
+        images = image_base64
+    else:
+        images = [image_base64]
+    print("image_base64:", images[0][:30]+"...")
+    
+    data = {
+        "init_image": images,  # base64 string list"
         "prompt": prompt,
         "key": api_key,
         "width": width,
@@ -273,8 +337,169 @@ def edit_image_with_qwen_base64(image_base64,
     return response.json()
 
 
+#%%
+if __name__ == "__main__":
+    response = edit_image_with_qwen_edit(
+        image_base64=[ test_image_base64_1, test_image_base64_2],
+        prompt=text_prompt,
+        api_key=api_key,
+        width=1024,
+        height=1024,
+        seed=4141
+    )
+#%%
+if __name__ == "__main__":
+    url = response.get("future_links", ["no_url"])[0]
+    show_image_thumbnail_from_base64url(url, size=(200, 200))
+
+#%%
 """Crea l'immagine usando Qwen con image reference"""
 
+def create_img2img_v6(image_url, 
+                      prompt, 
+                      api_key,
+                      negative_prompt=None,
+                      model_id = "qwen",
+                      width=1024,
+                      height=1024,
+                      seed=4141,
+                      num_inference_steps=8,
+                      strength=0.5
+                      ):
+    """Crea l'immagine usando Qwen con image reference"""
+    elegible_models = [
+        # low to medium price models
+        "qwen",
+               # "num_inference_steps": "8",
+               #"strength": "0.5",
+        "flux-kontext-dev",
+                #"num_inference_steps": "28",
+                # "strength": "0.7",
+                # "scheduler": "DPMSolverMultistepScheduler",
+                # "guidance": "2.5",
+                # negative prompt: ' (child:1.5), ((((underage)))), ((((child)))), (((kid))), (((preteen))), (teen:1.5) ugly, tiling, poorly drawn hands, poorly drawn feet, poorly drawn face, out of frame, extra limbs, disfigured, deformed, body out of frame, bad anatomy, watermark, signature, cut off, low contrast, underexposed, overexposed, bad art, beginner, amateur, distorted face, blurry, draft, grainy'
+    ]
 
+
+    url = "https://modelslab.com/api/v6/images/img2img"
+
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+
+    data = {
+            "model_id": model_id,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "init_image": image_url,
+            "width": width,
+            "height": height,
+            "num_inference_steps": str(num_inference_steps),
+            "strength": str(strength),
+            "key": api_key,
+
+            "seed": seed,
+            "base64": "yes",
+            "temp": "yes",
+        }
+    
+    response = requests.post(url, headers=headers, json=data)
+    response.raise_for_status()
+    update_requests_file(response.json(), urls_file="requests_list.txt")
+    return response.json()
+
+def create_img2img_v7(image_url, 
+                      prompt, 
+                      api_key,
+                      model_id = "seedream-4.0-i2i",
+                      aspect_ratio="1:1",
+                      seed=4141
+                      ):
+    elegible_models = [
+        # low to medium price models
+
+        # high price models
+        "seedream-4.0-i2i", 
+        "gen4_image_turbo", 
+        "flux-2-pro", 
+        "nano-banana"
+        ]
+
+    url = "https://modelslab.com/api/v7/images/image-to-image"
+
+    headers = {
+        "Content-Type": "application/json"
+    }
+    if isinstance(image_url, list):
+        images = image_url
+    elif isinstance(image_url, str):
+        images = [image_url]
+    else:
+        images = [
+                "https://assets.modelslab.com/uploads/3nveQqFHty5yv8hOYOvgRWxzxLnjnFdG28Mfj5Pd.jpg",
+                "https://assets.modelslab.com/uploads/yVgAXzCyWO56bdGQEpBaP1fO6Wk8jYP2O0DoLJeg.jpg",
+                "https://assets.modelslab.com/generations/b5aa997f-0784-4d17-913f-8b14df9e6065",
+                "https://assets.modelslab.com/generations/b25f10a5-6150-4933-a855-ba3fb51e8fc3"
+            ]
+    aspect_ratios = ["1:1", "4:3",  "9:16", "16:9", "9:16", "3:2", "2:3", "21:9", "9:21"]
+    if aspect_ratio not in aspect_ratios:
+        aspect_ratio = "1:1"
+
+    if not prompt:
+        prompt = "Hold the Ear rings and chain on her neck, wear the dress to model and put bag in her hand."
+
+    data = {
+            "init_image": images,
+            "prompt": prompt,
+            "model_id": model_id,
+            "aspect-ratio": aspect_ratio,
+            "key": api_key,
+            "seed": seed,
+            }
+    response = requests.post(url, headers=headers, json=data)
+    response.raise_for_status()
+    update_requests_file(response.json(), urls_file="requests_list.txt")
+    return response.json()
+
+
+#%% test
+if __name__ == "__main__":
+    response = create_img2img_v6(
+        image_url=test_image_base64_1,  
+        prompt=text_prompt,
+        api_key=api_key,
+        negative_prompt="((color green)), ((trees and leaves)),((wearing clothes)), ",
+        model_id="flux-kontext-dev",
+        width=1024,
+        height=1024,
+        seed=4141,
+        num_inference_steps=8,
+        strength=0.5
+    )
+
+#%%
+if __name__ == "__main__":
+    response = create_img2img_v7(
+        image_url=[
+            "https://assets.modelslab.com/uploads/3nveQqFHty5yv8hOYOvgRWxzxLnjnFdG28Mfj5Pd.jpg",
+            "https://assets.modelslab.com/uploads/yVgAXzCyWO56bdGQEpBaP1fO6Wk8jYP2O0DoLJeg.jpg"
+        ],
+        prompt=None,
+        api_key=api_key,
+        model_id="seedream-4.0-i2i",
+        aspect_ratio="1:1",
+        seed=4141
+    )
+#%%
+if __name__ == "__main__":
+    print("Response:", response)
+    url = response.get("future_links", ["no_url"])[0]
+    show_image_thumbnail_from_base64url(url, size=(100, 100))
+
+#%%
 
 """Crea l'immagine usando Qwen"""
+
+#%%
+# models pricing
