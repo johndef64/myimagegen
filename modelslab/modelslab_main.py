@@ -46,7 +46,6 @@ len(image_files), local_image_path
 prompt = "The person is holding a red apple. Professional photography, high detail, sharp focus, professional lighting, 8k"
 
 
-
 results = []
 
 def process_image(local_image_path, prompt):
@@ -145,6 +144,15 @@ for res in results:
 # success
 
 # total time 124.62 seconds for 3 images, in minutes 2.08 minutes
+
+##########
+# ✓ Time taken for request ID 168547743: 17.26 seconds
+# ✓ Time taken for request ID 168547743: 1.77 seconds
+# ✓ Time taken for request ID 168547752: 5.34 seconds
+# ✓ Time taken for request ID 168547752: 1.75 seconds
+# ✓ Time taken for request ID 168547756: 10.48 seconds
+# ✓ Time taken for request ID 168547756: 1.64 seconds
+
 #%%
 ############################################################
 #update results file
@@ -174,7 +182,7 @@ for res in results:
             print(f"Image Base64 (first 100 chars): {base64_data[:100]}...")
 
             if "<!DOCTYPE html>" not in base64_data:
-                save_base64_from_base64url(future_link, save_path=f"edited_images/edited_image_{request_id}.png")
+                save_base64_from_base64url(future_link, folder=f"edited_images/")
                 from IPython.display import display, Image
                 # display(Image(data=base64.b64decode(base64_data), width=50, height=50))
         else:
@@ -186,8 +194,6 @@ for res in results:
 # show dashborad images in ModelsLab using api
 import requests
 import json
-
-
 
 # Esempio d'uso
 api_key = api_key
@@ -219,12 +225,14 @@ for request_id in get_requestsid_from_file(file_name="requests_list.txt"):
             response = requests.get(result["output"][0])
             base64_data = response.text
             print(f"Image Base64 (first 100 chars): {base64_data[:100]}...")
-            display(Image(data=base64.b64decode(base64_data), width=50, height=50))
+            display(Image(data=base64.b64decode(base64_data), width=20, height=20))
 
             # save image
             save_base64_image_from_reqestid(result["output"][0], request_id, folder="fetched_images")
 
-
+#%%
+already_fetched = os.listdir("fetched_images")
+already_fetched
 #%%
 # update_requests_file(results, file_name="requests_list.txt")
 get_requestsid_from_file(file_name="requests_list.txt")
