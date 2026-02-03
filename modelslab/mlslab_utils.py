@@ -193,14 +193,16 @@ def get_requestsid_from_file(file_name="requests_list.txt"):
 
 # image managment
 
-def show_folder_images_thumbnails(folder_path):
+def show_folder_images_thumbnails(folder_path, max_images=None, thumb_size=(100, 100)):
     """small 100x100 thumbnails of all images in a folder with filename below"""
     import os
     from IPython.display import display, Image
+    if not max_images:
+        max_images = len(os.listdir(folder_path))
 
-    for filename in os.listdir(folder_path):
+    for filename in os.listdir(folder_path)[:max_images]:
         if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')):
-            # display(Image(filename=os.path.join(folder_path, filename), width=100, height=100))
+            display(Image(filename=os.path.join(folder_path, filename), width=thumb_size[0], height=thumb_size[1]))
             print(filename)
 
 

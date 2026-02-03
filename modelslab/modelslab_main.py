@@ -11,7 +11,6 @@ from mlslab_utils import *
 print("Working directory:", os.getcwd())
 
 # in quesot folder , in tuittti i nomi dei file elimina gli mspazi
-folder = "../images/fem/bellezze"
 import os
 for filename in os.listdir(folder):
     if ' ' in filename or '_' in filename:
@@ -20,7 +19,7 @@ for filename in os.listdir(folder):
         os.rename(os.path.join(folder, filename), os.path.join(folder, new_filename))
         # print(f"Renamed: {filename} -> {new_filename}")
 
-show_folder_images_thumbnails("../images/fem/bellezze/")
+show_folder_images_thumbnails(folder, max_images=None, thumb_size=(10, 10))
 
 #%%
 
@@ -28,18 +27,12 @@ folder = "../images/"
 handle = "image"
 image_files = get_images_paths(folder, handle=handle)
 
-folder = "../images/fem/bellezze"
-handle = "melikedhn"
-handle = "rapuanomarisa"
-handle = "mellaanniee"
-handle = ""
-image_files = get_images_paths(folder, handle=f"{handle} - DQy3sbHDLgT")
-image_files = get_images_paths(folder, handle=handle)
 
 # Percorso della tua immagine locale
 local_image_path = image_files[1]
-
-
+print("Length image files:", len(image_files))
+# define image batch max 5
+image_files = image_files[:5]
 
 # show selected image
 from IPython.display import display, Image
@@ -53,22 +46,15 @@ len(image_files), local_image_path
 prompt = "The person is holding a red apple. Professional photography, high detail, sharp focus, professional lighting, 8k"
 
 
-prompt1= "Close-up of an Italian woman, 20 years old, with dark brown hair. Brown-black eyes with eyeliner and mascara, and parted glossy lips painted in a deep, seductive shade of brown. Large, round eyes and full, provocative lips. Provocative and erotic allure of her expression. Her perfect hands are visible, with long, square-shaped glossy black nails. Natural light."
-prompt = "The girl is showing her perfect squared red nails to the camera. Fetish photography, high detail, sharp focus, professional lighting, 8k"
-prompt = "The girl is holding a red apple with her perfect squared red nails. Fetish photography, high detail, sharp focus, professional lighting, 8k"
-prompt = "The girl is holding a dark red apple with her perfect squared dark red nails. She has multile silver rings. Fetish photography, high detail, sharp focus, professional lighting, 8k"
-prompt = "The girl is holding a red apple with her perfect squared red nails. She has multile silver rings. Fetish photography, high detail, sharp focus, professional lighting, 8k"
+
+
 results = []
-
-
 # Pay as you go plan 5 queued API requests
-image_files = image_files[19:22]
 for local_image_path in image_files:
     
     print(f"\n---\nModifica immagine: {local_image_path}")
     try:
         #get with and height
-        from image_params import resize_image_to_megapixels
         new_width, new_height, resized_img = resize_image_to_megapixels(local_image_path, target_mp=1.0)
         print(f"✓ Ridimensionata a: {new_width}x{new_height}")
 
@@ -78,9 +64,6 @@ for local_image_path in image_files:
         base64_url = f"data:image/jpeg;base64,{base64_image}"
 
         # Step 3: Modifica con Qwen Edit
-        
-        use_base64 = True
-
         print("Modifica immagine con Qwen...")
         result = edit_image_with_qwen_base64(base64_image, 
                                     prompt, 
@@ -88,7 +71,8 @@ for local_image_path in image_files:
                                     width=new_width,
                                     height=new_height)
 
-        
+        status = result.get("status", "unknown")
+        print(f"✓ Stato richiesta: {status}")
 
         results.append(result)
 
@@ -103,6 +87,37 @@ for local_image_path in image_files:
         print(f"Response: {http_err.response.text}")
     except Exception as err:
         print(f"Errore: {err}")
+#%%
+for res in results:
+    status = res.get("status", "unknown")
+    request_id = res.get("id", "unknown")
+    # calcualte ime untils status is success
+    time_start = time.time()
+    while status == "processing":
+        print(f"Waiting for request ID {request_id} to complete...")
+        time.sleep(1)  # wait 5 seconds before checking again
+        # check status again
+        updated_res = fetch_queued_image_community(api_key, request_id)
+        status = updated_res.get("status", "unknown")
+
+        if status == "success":
+            # show future link
+            future_link = updated_res.get("output")[0]
+            print(f"✓ Request ID {request_id} completed. Future link: {future_link}")
+            # show image base64
+            response = requests.get(future_link)
+            base64_data = response.text
+            print(f"Image Base64 (first 100 chars): {base64_data[:100]}...")
+            # show thumb 50X50
+            from IPython.display import display, Image
+            display(Image(data=base64.b64decode(base64_data), width=50, height=50))
+
+            # upadate timed result
+            time_end = time.time()
+            elapsed_time = time_end - time_start
+            print(f"✓ Time taken for request ID {request_id}: {elapsed_time:.2f} seconds")
+
+    print(status)
 
 #%%
 ############################################################
@@ -123,7 +138,7 @@ for res in results:
         print(f"Image URL: {future_link}")
         # print(f"Image Base64 (first 100 chars): {img_base64[:10]}...")
         # show thimb 50X50
-        if use_base64:
+        if True:
             print("Decoding base64 image from URL...")
             # l url contine in base64 -> get base from url content
             # Image URL: https://pub-3626123a908346a7a8be8d9295f44e26.r2.dev/temp/5784eebc-54b1-4f85-95ef-ccc2d382046c-0.base64
@@ -133,7 +148,7 @@ for res in results:
             print(f"Image Base64 (first 100 chars): {base64_data[:100]}...")
 
             if "<!DOCTYPE html>" not in base64_data:
-                save_base64_from_base64url(future_link, save_path=f"edited_images/edited_image_{results.index(res)}{timestamp}.png")
+                save_base64_from_base64url(future_link, save_path=f"edited_images/edited_image_{request_id}.png")
                 from IPython.display import display, Image
                 # display(Image(data=base64.b64decode(base64_data), width=50, height=50))
         else:
