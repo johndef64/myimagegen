@@ -516,6 +516,10 @@ def request_img2img_v6(images_base64,
             'enhance_prompt': enhance_prompt
 
         }
+    # if model_id == "flux-2-dev":
+    #     data.pop("init_image_2", None)
+    #     # replace init_image with the image list
+    #     data["init_image_1"] = images_base64
     
     response = requests.post(url, headers=headers, json=data)
     response.raise_for_status()
@@ -617,14 +621,15 @@ if __name__ == "__main__":
     
     result = create_image_v6( images, 
                             prompt=text_prompt,
-                            model_id="flux-kontext-dev",
+                            model_id="flux-2-dev",
                             strength=0.7)
 #%%
 if __name__ == "__main__":
-    result = response
+    # result = response
 
     data = fetch_image_by_requestid(api_key, result.get("id"))
     url = data.get("output", ["no_url"])[0]
+    print("Fetched id:", data.get("id"))
     if data.get("status") == "success":
             show_image_thumbnail_from_base64url(url, size=(200, 200))
     while data.get("status") == "processing":
