@@ -11,101 +11,143 @@ from mlslab_utils import *
 print("Working directory:", os.getcwd())
 
 # in quesot folder , in tuittti i nomi dei file elimina gli mspazi
-folder = "../images/fem/bellezze"
-import os
-for filename in os.listdir(folder):
-    if ' ' in filename or '_' in filename:
-        new_filename = filename.replace(' ', '_')
-        new_filename = new_filename.replace('_', '')
-        os.rename(os.path.join(folder, filename), os.path.join(folder, new_filename))
-        # print(f"Renamed: {filename} -> {new_filename}")
-
-show_folder_images_thumbnails(folder, max_images=None, thumb_size=(10, 10))
-
-#%%
 
 folder = "../images/"
 handle = "image"
 image_files = get_images_paths(folder, handle=handle)
 
+folder = "../images/fem/bellezze"
+# folder = "../images\Posers\Full Body (ref)"
+
+import os
+def clean_filenames_in_folder(folder):
+    for filename in os.listdir(folder):
+        if ' ' in filename or '_' in filename:
+            new_filename = filename.replace(' ', '_')
+            # new_filename = new_filename.replace('_', '')
+            os.rename(os.path.join(folder, filename), os.path.join(folder, new_filename))
+            # print(f"Renamed: {filename} -> {new_filename}")
+
+show_folder_images_thumbnails(folder, max_images=5, thumb_size=(10, 10))
+
+#%%
+
+
+# handle = "814659020137855813"
+image_files = get_images_paths(folder, handle=handle)
+
+
+image_files = get_images_paths(folder, handle=f"{handle} - DQy3sbHDLgT")
+image_files = get_images_paths(folder, handle=handle)
+
 # Percorso della tua immagine locale
-local_image_path = image_files[1]
+local_image_path = image_files[0]
 print("Length image files:", len(image_files))
 # define image batch max 5
 image_files = image_files[:5]
+
+ref_image_path = get_images_paths("../images/sketches", handle="")
 
 # show selected image
 from IPython.display import display, Image
 # display(Image(filename=local_image_path))
 len(image_files), local_image_path
-
+#%%
+image_files
 #%%
 
 # Configurazione
-
 prompt = "The person is holding a red apple. Professional photography, high detail, sharp focus, professional lighting, 8k"
 
 
-results = []
 
-def process_image(local_image_path, prompt):
-    try:
-        #get with and height
-        new_width, new_height, resized_img = resize_image_to_megapixels(local_image_path, target_mp=1.0)
-        print(f"✓ Ridimensionata a: {new_width}x{new_height}")
+SizeImageDict = {
+# square
+"1:1": (1024, 1024),
+# vertical
+"3:4": (768, 1024),
+"1:2": (512, 1024),
+"9:16": (576, 1024),
+#landscape
+"4:3": (1024, 768),
+"2:1": (1024, 512),
+"16:9": (1024, 576),   
+}
 
-        # Step 1: Converti in base64
-        print("Conversione immagine in base64...")
-        base64_image = encode_image_to_base64(local_image_path, resize=1.0)
-        base64_url = f"data:image/jpeg;base64,{base64_image}"
-
-        # Step 3: Modifica con Qwen Edit
-        print("Modifica immagine con Qwen...")
-        result = edit_image_with_qwen_base64(base64_image, 
-                                    prompt, 
-                                    api_key,
-                                    width=new_width,
-                                    height=new_height)
-
-        status = result.get("status", "unknown")
-        print(f"✓ Stato richiesta: {status}")
-        results.append(result)
-
-        # Step 4: Aggiorna il file dei risultati
-        update_requests_file(result, urls_file="requests_list.txt")
-        time.sleep(1)
-
-        return result
-        
-    except requests.exceptions.HTTPError as http_err:
-        print(f"HTTP error: {http_err}")
-        print(f"Response: {http_err.response.text}")
-        return None
-    except Exception as err:
-        print(f"Errore: {err}")
-        return None
-
-# Pay as you go plan 5 queued API requests
-for local_image_path in image_files:
-    
-    print(f"\n---\nModifica immagine: {local_image_path}")
-    result = process_image(local_image_path, prompt)
-    max_retries = 3
+def create_image_qwen_retry(*args, **kwargs):
+    max_retries = 5
     retries = 0
+    result = None
     while not result:
-        print("Errore nella modifica dell'immagine, riprovo.")
-        # retry after 1 second
-        time.sleep(1)
-        result = process_image(local_image_path, prompt)
+        result = create_image_qwen(*args, **kwargs)
+    
         retries += 1
+        time.sleep(1)  # wait before retrying
         if retries >= max_retries:
             print("Numero massimo di tentativi raggiunto, salto alla successiva.")
             break
+    return result
 
-    if result is not None:
-        results.append(result)
+def create_image_v6_retry(*args, **kwargs):
+    max_retries = 5
+    result = None
+    while not result:
+        result = create_image_v6(*args, **kwargs)
+    
+        retries += 1
+        time.sleep(1)  # wait before retrying
+        if retries >= max_retries:
+            print("Numero massimo di tentativi raggiunto, salto alla successiva.")
+            break
+    return result
 
+
+
+# Pay as you go plan 5 queued API requests
+results = []
+for local_image_path in image_files[:1]:
+    MODEL     = "qwen-edit"
+    MODEL     = "flux-kontext-dev"
+    MODEL     = "qwen-edit-2511"
+    # MODEL     = "flux-2-dev"
+    
+    print(f"\n---\nModifica immagine: {local_image_path}")
+    if MODEL in ["flux-kontext-dev", "qwen", "flux-2-dev"]:
+        result = create_image_v6_retry(local_image_path,
+                                    prompt, 
+                                    model_id=MODEL
+                                    )
+        if result is not None:
+            results.append(result)
+
+    else:
+        print("Using Qwen model for image editing")
+        for MODEL in ["qwen-edit-2511", "qwen-edit"]:
+            result = create_image_qwen_retry(local_image_path, prompt, model_id=MODEL)
+            if result is not None:
+                results.append(result)
+        
+
+fetch_image_by_requestid(api_key, result.get("id"))
 #%%
+result
+#%%
+for res in results:
+    data = fetch_image_by_requestid(api_key, res.get("id"))
+    status = data.get("status", "unknown")
+    request_id = data.get("id", "unknown")
+    print(f"Request ID: {request_id}, Status: {status}")
+    if status == "success":
+        output_link = data.get("output")[0]
+        # show image base64
+        response = requests.get(output_link)
+        base64_data = response.text
+        from IPython.display import display, Image
+        display(Image(data=base64.b64decode(base64_data), width=20, height=20))
+#%%
+
+#%%  %%%%%%%%%%%%
+print("Results length:", len(results))
 for res in results:
     status = res.get("status", "unknown")
     request_id = res.get("id", "unknown")
@@ -115,20 +157,22 @@ for res in results:
         print(f"Waiting for request ID {request_id} to complete...")
         time.sleep(1)  # wait 5 seconds before checking again
         # check status again
-        updated_res = fetch_queued_image_community(api_key, request_id)
+        updated_res = fetch_image_by_requestid(api_key, request_id)
         status = updated_res.get("status", "unknown")
 
         if status == "success":
             # show future link
-            future_link = updated_res.get("output")[0]
-            print(f"✓ Request ID {request_id} completed. Future link: {future_link}")
+            output_link = updated_res.get("output")[0]
+            print(f"✓ Request ID {request_id} completed. Future link: {output_link}")
             # show image base64
-            response = requests.get(future_link)
+            response = requests.get(output_link)
             base64_data = response.text
             print(f"Image Base64 (first 100 chars): {base64_data[:100]}...")
             # show thumb 50X50
             from IPython.display import display, Image
             display(Image(data=base64.b64decode(base64_data), width=20, height=20))
+            # save image
+            save_image_from_requestid_base64(output_link, request_id, folder="../images/sketches")
 
             # upadate timed result
             time_end = time.time()
@@ -182,7 +226,7 @@ for res in results:
             print(f"Image Base64 (first 100 chars): {base64_data[:100]}...")
 
             if "<!DOCTYPE html>" not in base64_data:
-                save_base64_from_base64url(future_link, folder=f"edited_images/")
+                save_image_from_base64url(future_link, folder=f"edited_images/")
                 from IPython.display import display, Image
                 # display(Image(data=base64.b64decode(base64_data), width=50, height=50))
         else:
@@ -228,7 +272,7 @@ for request_id in get_requestsid_from_file(file_name="requests_list.txt"):
             display(Image(data=base64.b64decode(base64_data), width=20, height=20))
 
             # save image
-            save_base64_image_from_reqestid(result["output"][0], request_id, folder="fetched_images")
+            save_image_from_requestid_base64(result["output"][0], request_id, folder="fetched_images")
 
 #%%
 already_fetched = os.listdir("fetched_images")

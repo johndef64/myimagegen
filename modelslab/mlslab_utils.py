@@ -224,7 +224,6 @@ def get_requestsid_from_file(file_name="requests_list.txt"):
     return request_ids
 
 
-
 # image managment
 
 def show_folder_images_thumbnails(folder_path, max_images=None, thumb_size=(100, 100)):
@@ -251,18 +250,65 @@ def get_images_paths(folder, handle=""):
 
 ############ MOdels FUNCTIONS ############
 
+# SizeImageDict = {
+# # square
+# "1:1": (1024, 1024),
+# # vertical
+# "3:4": (768, 1024),
+# "1:2": (512, 1024),
+# "9:16": (576, 1024),
+# #landscape
+# "4:3": (1024, 768),
+# "2:1": (1024, 512),
+# "16:9": (1024, 576),   
+# }
+
 SizeImageDict = {
-# square
-"1:1": (1024, 1024),
-# vertical
-"3:4": (768, 1024),
-"1:2": (512, 1024),
-"9:16": (576, 1024),
-#landscape
-"4:3": (1024, 768),
-"2:1": (1024, 512),
-"16:9": (1024, 576),   
+    # square
+    "1:1": (1024, 1024),  # 1,048,576 px ✓
+    
+    # vertical
+    "3:4": (886, 1182),   # 1,047,252 px (~1MP)
+    "1:2": (724, 1448),   # 1,048,352 px (~1MP)
+    "9:16": (764, 1358),  # 1,037,512 px (~1MP)
+    
+    # landscape
+    "4:3": (1182, 886),   # 1,047,252 px (~1MP)
+    "2:1": (1448, 724),   # 1,048,352 px (~1MP)
+    "16:9": (1358, 764),  # 1,037,512 px (~1MP)
 }
+
+
+SchedulerList = [
+    "DDPMScheduler",
+    "DDIMScheduler",
+    "PNDMScheduler",
+    "LMSDiscreteScheduler",
+    "EulerDiscreteScheduler",
+    "EulerAncestralDiscreteScheduler",   ###
+    "DPMSolverMultistepScheduler",
+    "HeunDiscreteScheduler",
+    "KDPM2DiscreteScheduler",
+    "DPMSolverSinglestepScheduler",  ###
+    "KDPM2AncestralDiscreteScheduler",
+    "UniPCMultistepScheduler",  ###
+    "DDIMInverseScheduler",
+    "DEISMultistepScheduler",
+    "IPNDMScheduler",
+    "KarrasVeScheduler",
+    "ScoreSdeVeScheduler",
+    "LCMScheduler"
+]
+
+def show_scheduler_options():
+    url = "https://modelslab.com/api/v1/enterprise/schedulers_list"
+    payload = {"key": api_key}
+    headers = {"Content-Type": "application/json"}
+
+    response = requests.post(url, json=payload, headers=headers)
+    schedulers = response.json()
+    print(schedulers)
+
 
 
 """Modifica l'immagine usando Qwen Edit"""
@@ -355,20 +401,30 @@ def edit_image_with_qwen_edit(images_base64: Union[str, list],
         use_base64 = "no"
     
     
-    data = {
+    payload = {
         "init_image": images,  # base64 string list or URLs
         "prompt": prompt,
         "model_id": model_id,
         # "num_inference_steps": 8,
-        "key": api_key,
         "width": width,
         "height": height,
         "seed": seed,
         "base64": use_base64,
-        "temp": "yes",
+        # "temp": "yes",
     }
+
+    if model_id == "qwen-edit-2511_NOOO":
+        # add come parametes
+        payload["num_inference_steps"] = 8 # Range: 30-50 (2511 funziona meglio con più step)
+        payload["guidance_scale"] = 5 # Range: 3.0-5.0 (2511 è sensibile, non andare troppo alto)
+        # data["scheduler"] = "DPMSolverMultistepScheduler"
+        payload["scheduler"] = "EulerAncestralDiscreteScheduler"
+        payload["strength"] = 0.8,  # Range: 0.5-1.0 (quanto modificare l'immagine)
+        # data["seed"] = -1 # random seed for more variety
+
+    payload["key"] = api_key
     
-    response = requests.post(url, headers=headers, json=data)
+    response = requests.post(url, headers=headers, json=payload)
     response.raise_for_status()
     update_requests_file(response.json(), urls_file="requests_list.txt")
     return response.json()
@@ -379,10 +435,10 @@ def create_image_qwen(local_image_paths: Union[str, list],
                  model_id = "qwen-edit-2511",
                  size = None):
     if isinstance(local_image_paths, list):
-        local_image_path = local_image_paths[0]
+        image_path = local_image_paths[0]
     else:
         local_image_paths = [local_image_paths]
-        local_image_path = local_image_paths[0]
+        image_path = local_image_paths[0]
 
     try:
         if size in SizeImageDict:
@@ -390,7 +446,7 @@ def create_image_qwen(local_image_paths: Union[str, list],
             print(f"✓ Target size for aspect ratio {size}: {target_width}x{target_height}")
         else:
             #get with and height
-            target_width, target_height, resized_img = resize_image_to_megapixels(local_image_path, target_mp=1.0)
+            target_width, target_height, resized_img = resize_image_to_megapixels(image_path, target_mp=1.0)
             print(f"✓ Ridimensionata a: {target_width}x{target_height}")
 
         # Step 1: Converti in base64
@@ -407,7 +463,7 @@ def create_image_qwen(local_image_paths: Union[str, list],
 
         # Step 3: Modifica con Qwen Edit
         print("Modifica immagine con Qwen...")
-        result = edit_image_with_qwen_edit(base64_urls, 
+        result = edit_image_with_qwen_edit(base64_images, 
                                     prompt, 
                                     api_key,
                                     model_id=model_id,
@@ -449,16 +505,19 @@ if __name__ == "__main__":
         )
 
     images = ["..\\images\\image_1.jpg", "..\\images\\image_3.png"]
-    images = ["https://i.pinimg.com/736x/6d/99/8e/6d998ead589a312a4baa00c89c2879e8.jpg"]
+    # images = ["https://i.pinimg.com/736x/6d/99/8e/6d998ead589a312a4baa00c89c2879e8.jpg"]
     result = create_image_qwen(images, 
                             prompt=text_prompt,
-                            model_id="qwen-edit-2511")
+                            model_id="qwen-edit-2511",
+                            size = "3:4"
+                            )
     
 #%%
-result
-data = fetch_image_by_requestid(api_key, result.get("id"))
-print("Fetched id:", data.get("id"))
-data
+if __name__ == "__main__":
+    result
+    data = fetch_image_by_requestid(api_key, result.get("id"))
+    print("Fetched id:", data.get("id"))
+    data
 #%%
 if __name__ == "__main__":
     data = fetch_image_by_requestid(api_key, result.get("id"))
