@@ -157,7 +157,7 @@ def show_image_thumbnail_from_base64url(img_url, size=(100, 100)):
     else:
         print("URL immagine vuoto, impossibile mostrare.")
 
-def fetch_queued_image_community(api_key, request_id):
+def fetch_image_by_requestid(api_key, request_id):
     """
     Recupera un'immagine usando l'API Community (non Enterprise)
     
@@ -246,6 +246,19 @@ def get_images_paths(folder, handle=""):
 
 ############ MOdels FUNCTIONS ############
 
+SizeImageDict = {
+# square
+"1:1": (1024, 1024),
+# vertical
+"3:4": (768, 1024),
+"1:2": (512, 1024),
+"9:16": (576, 1024),
+#landscape
+"4:3": (1024, 768),
+"2:1": (1024, 512),
+"16:9": (1024, 576),   
+}
+
 
 """Modifica l'immagine usando Qwen Edit"""
 
@@ -257,6 +270,9 @@ print(os.getcwd())
 test_image_base64_1 = encode_image_to_base64("..\\images\\image_1.jpg", resize=1)
 test_image_base64_2 = encode_image_to_base64("..\\images\\image_3.png", resize=1)
 text_prompt = "The subject is walking in a fantasy landscape with a tree next to him, in the style of Studio Ghibli"
+
+
+
 
 def edit_image_with_qwen_base64(image_base64: Union[str, list], 
                          prompt, 
@@ -302,29 +318,34 @@ def edit_image_with_qwen_base64(image_base64: Union[str, list],
     update_requests_file(response.json(), urls_file="requests_list.txt")
     return response.json()
 
-def edit_image_with_qwen_edit(image_base64: Union[str, list], 
+def edit_image_with_qwen_edit(images_base64: Union[str, list], 
                          prompt, 
                          api_key,
+                         model_id="qwen-edit",
                          width=1024,
                          height=1024,
                          seed=4141
                          ):
+    
     """Modifica l'immagine usando Qwen Edit"""
+    
     url = "https://modelslab.com/api/v6/image_editing/qwen_edit"
-    model_id = "qwen-edit-2511"
+    elegible_models = ["qwen-edit","qwen-edit-2511"]
     
     headers = {"Content-Type": "application/json"}
     
 
-    if isinstance(image_base64, list):
-        images = image_base64
+    if isinstance(images_base64, list):
+        images = images_base64
     else:
-        images = [image_base64]
+        images = [images_base64]
     print("image_base64:", images[0][:30]+"...")
     
     data = {
         "init_image": images,  # base64 string list"
         "prompt": prompt,
+        "model_id": model_id,
+        # "num_inference_steps": 8,
         "key": api_key,
         "width": width,
         "height": height,
@@ -339,25 +360,102 @@ def edit_image_with_qwen_edit(image_base64: Union[str, list],
     return response.json()
 
 
+def create_image_qwen(local_image_paths: Union[str, list],
+                 prompt, 
+                 model_id = "qwen-edit-2511",
+                 size = None):
+    if isinstance(local_image_paths, list):
+        local_image_path = local_image_paths[0]
+    else:
+        local_image_paths = [local_image_paths]
+        local_image_path = local_image_paths[0]
+
+    try:
+        if size in SizeImageDict:
+            target_width, target_height = SizeImageDict[size]
+            print(f"✓ Target size for aspect ratio {size}: {target_width}x{target_height}")
+        else:
+            #get with and height
+            target_width, target_height, resized_img = resize_image_to_megapixels(local_image_path, target_mp=1.0)
+            print(f"✓ Ridimensionata a: {target_width}x{target_height}")
+
+        # Step 1: Converti in base64
+        print("Conversione immagine in base64...")
+        base64_images = [encode_image_to_base64(path, resize=1.0) for path in local_image_paths]
+        
+        base64_urls = [f"data:image/jpeg;base64,{img}" for img in base64_images]
+
+        # Step 3: Modifica con Qwen Edit
+        print("Modifica immagine con Qwen...")
+        result = edit_image_with_qwen_edit(base64_urls, 
+                                    prompt, 
+                                    api_key,
+                                    model_id=model_id,
+                                    width=target_width,
+                                    height=target_height)
+
+        status = result.get("status", "unknown")
+        print(f"✓ Stato richiesta: {status}")
+        if status == "processing":
+            print(f"Request ID in processing: {result.get('id')}")
+            # Step 4: Aggiorna il file dei risultati
+            update_requests_file(result, urls_file="requests_list.txt")
+            time.sleep(1)
+        else:
+            print(f" ✗ Modifica immagine fallita. Stato: {status}")
+            return None
+
+        return result
+    
+    except requests.exceptions.HTTPError as http_err:
+        print(f"HTTP error: {http_err}")
+        print(f"Response: {http_err.response.text}")
+        return None
+    except Exception as err:
+        print(f"Errore: {err}")
+        return None
+
+
 #%%
 if __name__ == "__main__":
-    response = edit_image_with_qwen_edit(
-        image_base64=[ test_image_base64_1, test_image_base64_2],
-        prompt=text_prompt,
-        api_key=api_key,
-        width=1024,
-        height=1024,
-        seed=4141
-    )
+    if False:
+        response = edit_image_with_qwen_base64(
+            image_base64=test_image_base64_1,  
+            prompt=text_prompt,
+            api_key=api_key,
+            width=1024,
+            height=1024,
+            seed=4141
+        )
+
+    images = ["..\\images\\image_1.jpg", "..\\images\\image_3.png"]
+    result = create_image_qwen(images, 
+                            prompt=text_prompt,
+                            model_id="qwen-edit")
+    
 #%%
 if __name__ == "__main__":
-    url = response.get("future_links", ["no_url"])[0]
-    show_image_thumbnail_from_base64url(url, size=(200, 200))
+    data = fetch_image_by_requestid(api_key, result.get("id"))
+    url = data.get("output", ["no_url"])[0]
+    if data.get("status") == "success":
+            show_image_thumbnail_from_base64url(url, size=(200, 200))
+    while data.get("status") == "processing":
+        data = fetch_image_by_requestid(api_key, result.get("id"))
+        print("status:", data.get("status"))
+        time.sleep(1)
+        
+        if data.get("status") == "success":
+            show_image_thumbnail_from_base64url(url, size=(200, 200))
+            break
+#%%
+
+#%%
+
 
 #%%
 """Crea l'immagine con image reference"""
 
-def create_img2img_v6(image_url, 
+def request_img2img_v6(images_base64, 
                       prompt, 
                       api_key,
                       negative_prompt=None,
@@ -391,13 +489,21 @@ def create_img2img_v6(image_url,
     headers = {
         "Content-Type": "application/json"
     }
+    if isinstance(images_base64, list):
+        images_base64 = images_base64
+    else:
+        images_base64 = [images_base64]
+    if len(images_base64) < 2:
+        images_base64 = [ images_base64[0], None]
 
-
+    print("image_base64:", images_base64[0][:30]+"...")
+    
     data = {
             "model_id": model_id,
             "prompt": prompt,
             "negative_prompt": negative_prompt,
-            "init_image": image_url,
+            "init_image": images_base64[0],
+            "init_image_2": images_base64[1],
             "width": width,
             "height": height,
             "num_inference_steps": str(num_inference_steps),
@@ -416,7 +522,124 @@ def create_img2img_v6(image_url,
     update_requests_file(response.json(), urls_file="requests_list.txt")
     return response.json()
 
-def create_img2img_v7(image_url, 
+
+def create_image_v6(images: Union[str, list],
+                 prompt, 
+                 model_id = "flux-kontext-dev",
+                 strength=0.7,
+                 num_inference_steps=28,
+                 enhance_prompt="no",
+                 negative_prompt=None,
+                 size = None):
+    if isinstance(images, list):
+        local_image_path = images[0]
+    else:
+        images = [images]
+        local_image_path = images[0]    
+
+    try:
+        if size in SizeImageDict:
+            target_width, target_height = SizeImageDict[size]
+            print(f"✓ Target size for aspect ratio {size}: {target_width}x{target_height}")
+        else:
+            #get with and height
+            target_width, target_height, resized_img = resize_image_to_megapixels(local_image_path, target_mp=1.0)
+            print(f"✓ Ridimensionata a: {target_width}x{target_height}")
+
+        # Step 1: Converti in base64
+        print("Conversione immagine in base64...")
+        base64_images = [encode_image_to_base64(path, resize=1.0) for path in images]
+        
+        base64_urls = [f"data:image/jpeg;base64,{img}" for img in base64_images]
+
+        if model_id == "flux-kontext-dev":
+            num_inference_steps = 28
+        elif model_id == "qwen":
+            num_inference_steps = 8
+
+        # Step 3: Modifica con Model
+        print("Modifica immagine con Model...")
+        result = request_img2img_v6(base64_images, 
+                                    prompt, 
+                                    api_key,
+                                    model_id=model_id,
+                                    width=target_width,
+                                    height=target_height,
+                                    strength=strength,
+                                    num_inference_steps=num_inference_steps,
+                                    enhance_prompt=enhance_prompt,
+                                    negative_prompt=negative_prompt
+                                    )
+
+        status = result.get("status", "unknown")
+        print(f"✓ Stato richiesta: {status}")
+        if status == "processing":
+            print(f"Request ID in processing: {result.get('id')}")
+            # Step 4: Aggiorna il file dei risultati
+            update_requests_file(result, urls_file="requests_list.txt")
+            time.sleep(1)
+        else:
+            print(f" ✗ Modifica immagine fallita. Stato: {status}")
+            return result
+
+        return result
+    
+    except requests.exceptions.HTTPError as http_err:
+        print(f"HTTP error: {http_err}")
+        print(f"Response: {http_err.response.text}")
+        return None
+    except Exception as err:
+        print(f"Errore: {err}")
+        return None
+
+
+#%% test
+if __name__ == "__main__":
+    images = ["..\\images\\image_1.jpg", "..\\images\\image_3.png"]
+    images_base64 = [encode_image_to_base64(path, resize=1.0) for path in images]
+
+    if False:
+        response = request_img2img_v6(
+            images_base64=images_base64,  
+            prompt=text_prompt,
+            api_key=api_key,
+            negative_prompt="((color green)), ((trees and leaves)),((green clothes)), ",
+            model_id="flux-kontext-dev",
+            width=1024,
+            height=1024,
+            seed=4141,
+            num_inference_steps=28,
+            strength=0.7,
+            temp="yes",
+            enhance_prompt="no"
+        )
+        print("Response:", response.get("id"), response.get("status"))
+    
+    result = create_image_v6( images, 
+                            prompt=text_prompt,
+                            model_id="flux-kontext-dev",
+                            strength=0.7)
+#%%
+if __name__ == "__main__":
+    result = response
+
+    data = fetch_image_by_requestid(api_key, result.get("id"))
+    url = data.get("output", ["no_url"])[0]
+    if data.get("status") == "success":
+            show_image_thumbnail_from_base64url(url, size=(200, 200))
+    while data.get("status") == "processing":
+        data = fetch_image_by_requestid(api_key, result.get("id"))
+        print("status:", data.get("status"))
+        time.sleep(1)
+        
+        if data.get("status") == "success":
+            show_image_thumbnail_from_base64url(url, size=(200, 200))
+            break
+
+#%%
+
+
+def request_img2img_v7(image_url, 
                       prompt, 
                       api_key,
                       model_id = "seedream-4.0-i2i",
@@ -470,24 +693,9 @@ def create_img2img_v7(image_url,
     return response.json()
 
 
-#%% test
-if __name__ == "__main__":
-    response = create_img2img_v6(
-        image_url=test_image_base64_1,  
-        prompt=text_prompt,
-        api_key=api_key,
-        negative_prompt="((color green)), ((trees and leaves)),((green clothes)), ",
-        model_id="flux-kontext-dev",
-        width=1024,
-        height=1024,
-        seed=4141,
-        num_inference_steps=28,
-        strength=0.7,
-        temp="yes",
-        enhance_prompt="no"
-    )
 
 #%%
+
 if __name__ == "__main__":
     response = create_img2img_v7(
         image_url=[

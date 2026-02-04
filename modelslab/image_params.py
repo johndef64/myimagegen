@@ -58,8 +58,8 @@ def resize_image_to_megapixels(image_input, target_mp=1.0):
     target_pixels = target_mp * 1_000_000
     
     # 4. Se già sotto il target, restituisci dimensioni originali
-    if current_pixels <= target_pixels:
-        return current_width, current_height, img
+    # if current_pixels <= target_pixels:
+    #     return current_width, current_height, img
     
     # 5. Calcola nuove dimensioni mantenendo aspect ratio
     aspect_ratio = current_width / current_height

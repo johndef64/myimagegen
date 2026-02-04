@@ -14,11 +14,16 @@ api_keys*
 
 downloaders/downloads/*
 docs/*
+modelslab/output*
+modelslab/docs*
+modelslab/_*
 
+
+images/*
 
 MyImageGen.lnk
-prompts_custom.yaml
-prompts_custom.json
+*_custom.yaml
+*_custom.json
 tagger_focus.json
 api_generator.py
 
