@@ -412,6 +412,8 @@ def edit_image_with_qwen_edit(images_base64: Union[str, list],
         "base64": use_base64,
         # "temp": "yes",
     }
+    if model_id == "qwen-edit":
+        payload.pop("model_id", None)
 
     if model_id == "qwen-edit-2511_NOOO":
         # add come parametes

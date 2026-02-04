@@ -32,7 +32,6 @@ show_folder_images_thumbnails(folder, max_images=5, thumb_size=(10, 10))
 
 #%%
 
-
 # handle = "814659020137855813"
 image_files = get_images_paths(folder, handle=handle)
 
@@ -52,8 +51,6 @@ ref_image_path = get_images_paths("../images/sketches", handle="")
 from IPython.display import display, Image
 # display(Image(filename=local_image_path))
 len(image_files), local_image_path
-#%%
-image_files
 #%%
 
 # Configurazione
@@ -126,11 +123,14 @@ for local_image_path in image_files[:1]:
             result = create_image_qwen_retry(local_image_path, prompt, model_id=MODEL)
             if result is not None:
                 results.append(result)
+            time.sleep(1)  # wait before next request
         
 
 fetch_image_by_requestid(api_key, result.get("id"))
 #%%
-result
+for res in results:
+    data = fetch_image_by_requestid(api_key, res.get("id"))
+    print(data.get("id"), data.get("status"), data.get("future_links"))
 #%%
 for res in results:
     data = fetch_image_by_requestid(api_key, res.get("id"))
