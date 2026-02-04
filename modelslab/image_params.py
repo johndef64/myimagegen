@@ -29,7 +29,7 @@ def resize_image_to_megapixels(image_input, target_mp=1.0):
         img = image_input
     
     elif isinstance(image_input, str):
-        if image_input.startswith('http://') or image_input.startswith('https://'):
+        if image_input.startswith('http:') or image_input.startswith('https://'):
             # URL
             response = requests.get(image_input, timeout=10)
             response.raise_for_status()

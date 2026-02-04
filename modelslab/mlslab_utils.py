@@ -135,27 +135,32 @@ def save_image_from_base64url(img_url, folder, show_thumb=False):
     else:
         print("URL immagine vuoto, impossibile salvare.")
 
-def show_image_thumbnail_from_base64url(img_url, size=(100, 100)):
+def show_image_thumbnail(img_url, size=(100, 100)):
     """Mostra un'anteprima di un'immagine in base64 da un URL
     url example:https://pub-3626123a908346a7a8be8d9295f44e26.r2.dev/temp/08a459fd-538e-41a8-9c14-dc009296b37f-0.base64
     """
     import requests
     if img_url:
+        is_url = img_url.startswith("http:") or img_url.startswith("https:")
+        if not is_url:
+            response = requests.get(img_url)
+            response.raise_for_status()
+            base64_data = response.text
+            # Rimuovi il prefisso data URI se presente
+            if base64_data.startswith("data:image"):
+                base64_data = base64_data.split(",")[1]
+            
+            img_data = base64.b64decode(base64_data)
 
-        response = requests.get(img_url)
-        response.raise_for_status()
-        base64_data = response.text
-        # Rimuovi il prefisso data URI se presente
-        if base64_data.startswith("data:image"):
-            base64_data = base64_data.split(",")[1]
-        
-        img_data = base64.b64decode(base64_data)
-
-        from IPython.display import display, Image
-        from io import BytesIO
-        display(Image(data=img_data, width=size[0], height=size[1]))
+            from IPython.display import display, Image
+            from io import BytesIO
+            display(Image(data=img_data, width=size[0], height=size[1]))
+        else:   
+            from IPython.display import display, Image
+            display(Image(url=img_url, width=size[0], height=size[1]))
     else:
         print("URL immagine vuoto, impossibile mostrare.")
+
 
 def fetch_image_by_requestid(api_key, request_id):
     """
@@ -339,10 +344,19 @@ def edit_image_with_qwen_edit(images_base64: Union[str, list],
         images = images_base64
     else:
         images = [images_base64]
-    print("image_base64:", images[0][:30]+"...")
+    
+    # star  with data:image or "/9j/"
+    images_are_urls = all(img.startswith("https:") for img in images)
+    if not images_are_urls:
+        print("image_base64:", images[0][:30]+"...")
+        use_base64 = "yes"
+    else:
+        print("image URLs:", images)
+        use_base64 = "no"
+    
     
     data = {
-        "init_image": images,  # base64 string list"
+        "init_image": images,  # base64 string list or URLs
         "prompt": prompt,
         "model_id": model_id,
         # "num_inference_steps": 8,
@@ -350,7 +364,7 @@ def edit_image_with_qwen_edit(images_base64: Union[str, list],
         "width": width,
         "height": height,
         "seed": seed,
-        "base64": "yes",
+        "base64": use_base64,
         "temp": "yes",
     }
     
@@ -380,10 +394,16 @@ def create_image_qwen(local_image_paths: Union[str, list],
             print(f"✓ Ridimensionata a: {target_width}x{target_height}")
 
         # Step 1: Converti in base64
-        print("Conversione immagine in base64...")
-        base64_images = [encode_image_to_base64(path, resize=1.0) for path in local_image_paths]
-        
-        base64_urls = [f"data:image/jpeg;base64,{img}" for img in base64_images]
+        paths_are_urls = all(path.startswith("https:") for path in local_image_paths)
+
+        if paths_are_urls:
+            print("Usando URL immagine direttamente...")
+            base64_urls = local_image_paths
+        else:
+            print("Conversione immagine in base64...")
+            base64_images = [encode_image_to_base64(path, resize=1.0) for path in local_image_paths]
+            
+            base64_urls = [f"data:image/jpeg;base64,{img}" for img in base64_images]
 
         # Step 3: Modifica con Qwen Edit
         print("Modifica immagine con Qwen...")
@@ -429,23 +449,32 @@ if __name__ == "__main__":
         )
 
     images = ["..\\images\\image_1.jpg", "..\\images\\image_3.png"]
+    images = ["https://i.pinimg.com/736x/6d/99/8e/6d998ead589a312a4baa00c89c2879e8.jpg"]
     result = create_image_qwen(images, 
                             prompt=text_prompt,
-                            model_id="qwen-edit")
+                            model_id="qwen-edit-2511")
     
+#%%
+result
+data = fetch_image_by_requestid(api_key, result.get("id"))
+print("Fetched id:", data.get("id"))
+data
 #%%
 if __name__ == "__main__":
     data = fetch_image_by_requestid(api_key, result.get("id"))
-    url = data.get("output", ["no_url"])[0]
+    print("Fetched id:", data.get("id"))
+    future_url = data.get("future_links", ["no_url"])[0]
+    print("Future URL:", future_url)
     if data.get("status") == "success":
-            show_image_thumbnail_from_base64url(url, size=(200, 200))
+            url = data.get("output", ["no_url"])[0]
+            show_image_thumbnail(url, size=(200, 200))
     while data.get("status") == "processing":
         data = fetch_image_by_requestid(api_key, result.get("id"))
         print("status:", data.get("status"))
         time.sleep(1)
         
         if data.get("status") == "success":
-            show_image_thumbnail_from_base64url(url, size=(200, 200))
+            show_image_thumbnail(url, size=(200, 200))
             break
 #%%
 
@@ -631,14 +660,14 @@ if __name__ == "__main__":
     url = data.get("output", ["no_url"])[0]
     print("Fetched id:", data.get("id"))
     if data.get("status") == "success":
-            show_image_thumbnail_from_base64url(url, size=(200, 200))
+            show_image_thumbnail(url, size=(200, 200))
     while data.get("status") == "processing":
         data = fetch_image_by_requestid(api_key, result.get("id"))
         print("status:", data.get("status"))
         time.sleep(1)
         
         if data.get("status") == "success":
-            show_image_thumbnail_from_base64url(url, size=(200, 200))
+            show_image_thumbnail(url, size=(200, 200))
             break
 
 #%%
@@ -718,7 +747,7 @@ if __name__ == "__main__":
     print("Response:", response)
     url = response.get("future_links", ["no_url"])[0]
     request_id = response.get("id", "no_id")
-    # show_image_thumbnail_from_base64url(url, size=(100, 100))
+    # show_image_thumbnail(url, size=(100, 100))
     save_image_from_base64url(url, folder="img2img_results")
     save_image_from_requestid_base64(url, request_id, folder="img2img_results")
 #%%
