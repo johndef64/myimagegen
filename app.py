@@ -426,6 +426,7 @@ with st.sidebar:
          "Image Viewer", 
          "Prompt Manager", 
         #  "Audio Generator"
+        "ModelsLab Generator"
          ],
         label_visibility="collapsed"
     )
@@ -454,6 +455,12 @@ if page == "Prompt Generator":
 #     import audio_generator_page
 #     audio_generator_page.show_audio_generator_page()
 #     st.stop()
+
+if page == "ModelsLab Generator":
+    # Import and run the ModelsLab generator page
+    import mslab_page
+    mslab_page.show_modelslab_generator_page()
+    st.stop()
 
 # Main UI
 st.title("🎨 OpenRouter Image Generator")
