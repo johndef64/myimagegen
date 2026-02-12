@@ -106,6 +106,7 @@ GROQ_MODELS = {
 OPENROUTER_MODELS = {
     "grok-4": "x-ai/grok-4",
     "grok-4-fast": "x-ai/grok-4-fast",
+    "grok-4.1-fast": "x-ai/grok-4.1-fast",
     "sonar-pro-search": "perplexity/sonar-pro-search",
     "bert-nebulon-alpha": "openrouter/bert-nebulon-alpha",  
 }

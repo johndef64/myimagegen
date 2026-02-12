@@ -1262,6 +1262,258 @@ def show_modelslab_generator_page():
                                     key=f"comp_{idx}"
                                 )
 
+    """
+    # ho dovuto commentare tutto perchè, dopo la prima generazione lapp si blocca e non genera piu nulla, anche l altre pagine si bloccano
+    
+    # Quick Prompt Generator Section
+    st.divider()
+    st.subheader("✨ Quick Prompt Generator")
+    st.markdown("Generate prompts from images or text for direct use in image generation")
+
+    with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
+        qpg_col1, qpg_col2 = st.columns([1, 1])
+        
+        with qpg_col1:
+            # Model selection for prompt generation
+            qpg_provider = st.selectbox(
+                "AI Provider",
+                ["OpenRouter", "Groq", "X.AI (Grok)"],
+                key="qpg_provider"
+            )
+            
+            if qpg_provider == "OpenRouter":
+                from promptgen_page import OPENROUTER_MODELS
+                qpg_models = OPENROUTER_MODELS
+                qpg_default = "grok-4"
+            elif qpg_provider == "Groq":
+                from promptgen_page import GROQ_MODELS
+                qpg_models = GROQ_MODELS
+                qpg_default = "kimi-k2"
+            else:
+                from promptgen_page import XAI_MODELS
+                qpg_models = XAI_MODELS
+                qpg_default = "grok-4"
+            
+            qpg_model_keys = list(qpg_models.keys())
+            qpg_default_idx = qpg_model_keys.index(qpg_default) if qpg_default in qpg_model_keys else 0
+            
+            qpg_model_key = st.selectbox(
+                "Model",
+                options=qpg_model_keys,
+                index=qpg_default_idx,
+                key="qpg_model"
+            )
+            qpg_model = qpg_models[qpg_model_key]
+            
+            # Task selection
+            from promptgen_page import INSTUCTIONS
+            TASK_INSTRUCTIONS = INSTUCTIONS.copy()
+
+            # if the file prompts/additional_tasks.json exists, load additional instructions
+            # Add them all in INSTRUCTIONS
+            import json
+            QPG_TASKS = {
+                    "GENERATE_PROMPT": "📝 Basic Prompt",
+                    "GENERATE_DETAILED_PROMPT": "📝 Detailed Prompt",
+                    "GENERATE_JSON_PROMPT": "📝 JSON Prompt"
+                }
+            TASK_OPTIONS = ["GENERATE_PROMPT", "GENERATE_DETAILED_PROMPT", "GENERATE_JSON_PROMPT"]
+            additional_tasks = {}
+            if os.path.exists("prompts/additional_tasks.json"):
+                with open("prompts/additional_tasks.json", "r") as f:
+                    additional_tasks = json.load(f)
+                TASK_INSTRUCTIONS.update(additional_tasks)
+
+                for key in additional_tasks.keys():
+                    QPG_TASKS[key] = f"📝 {key.replace('_', ' ').title()}"
+                    TASK_OPTIONS.append(key)
+
+                
+
+            qpg_task = st.selectbox(
+                "Task",
+                options=TASK_OPTIONS,
+                format_func=lambda x: QPG_TASKS.get(x, x),
+                key="qpg_task"
+            )
+            
+            # Draft text input
+            qpg_draft = st.text_area(
+                "Draft Text (Optional)",
+                height=100,
+                placeholder="Enter draft text or description...",
+                key="qpg_draft"
+            )
+            
+            # Image upload (no preview)
+            qpg_image = st.file_uploader(
+                "Upload Image (Optional)",
+                type=["png", "jpg", "jpeg", "webp"],
+                key="qpg_image",
+                help="Upload an image to generate prompt from"
+            )
+            
+            qpg_generate = st.button("🚀 Generate Prompt", type="primary", width="stretch", key="qpg_gen_btn")
+        
+        with qpg_col2:
+            st.subheader("Generated Prompt")
+            
+            if qpg_generate and (qpg_draft or qpg_image):
+                try:
+                    from promptgen_page import TaggerGPT, DEFAULT_SYSTEM_IMAGE_PROMPT, optimize_image
+                    
+                    with st.spinner(f"Generating with {qpg_model_key}..."):
+                        tagger = TaggerGPT(qpg_model)
+                        
+                        # Build instruction
+                        instruction = TASK_INSTRUCTIONS[qpg_task]
+                        
+                        if qpg_draft:
+                            instruction = f"{instruction}\n\nContext/Reference text: {qpg_draft}"
+                        
+                        # Process image if provided
+                        processed_img = None
+                        if qpg_image:
+                            qpg_image.seek(0)  # Reset file pointer to beginning
+                            img = Image.open(qpg_image).convert("RGB")
+                            processed_img = optimize_image(img, target_size=1120)
+                            # Debug: show processed image size
+                            st.image(processed_img, caption=f"Processing: {qpg_image.name}", width=100)
+
+                        # Generate
+                        result_prompt = tagger.chat_completion_prompt(
+                            DEFAULT_SYSTEM_IMAGE_PROMPT,
+                            instruction,
+                            image=processed_img
+                        )
+                        
+                        st.success("✅ Prompt generated!")
+                        
+                        # Save to session state for immediate access
+                        st.session_state['last_generated_prompt'] = result_prompt
+                        
+                        # Save to history
+                        prompt_item = {
+                            'result': result_prompt,
+                            'task': qpg_task,
+                            'model': qpg_model_key,
+                            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            'has_image': qpg_image is not None,
+                            'has_text': bool(qpg_draft)
+                        }
+                        st.session_state.prompt_history.insert(0, prompt_item)
+                        
+
+                        
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+            
+            # Display result if available (outside the generate block so it persists)
+            if 'last_generated_prompt' in st.session_state and st.session_state['last_generated_prompt']:
+                result_prompt = st.session_state['last_generated_prompt']
+                
+                # Use dynamic key based on prompt content hash to force refresh
+                prompt_hash = hash(result_prompt) % 100000
+                
+                # Display result in text area (editable)
+                st.text_area("Generated Result", value=result_prompt, height=200, key=f"qpg_result_{prompt_hash}")
+
+                if st.button("📋 Copy", key="copy_generated_result", width="stretch"):
+                    try:
+                        import pyperclip
+                        pyperclip.copy(st.session_state['last_generated_prompt'])
+                        st.success("✅ Copied!")
+                    except Exception as e:
+                        # Display result in a code block with built-in copy button
+                        st.code(result_prompt, language=None)
+                        st.info("⚠️ Pyperclip not available. Use the code box copy button above.")
+                
+                # Download button
+                st.download_button(
+                    "💾 Download Prompt",
+                    data=result_prompt,
+                    file_name="generated_prompt.txt",
+                    mime="text/plain",
+                    width="stretch",
+                    key="qpg_download"
+                )
+            elif not qpg_generate:
+                st.info("👈 Enter text or upload an image, then click Generate")
+
+    # Prompt History Section
+    if st.session_state.prompt_history:
+        st.divider()
+        st.subheader("📜 Recent Generated Prompts")
+        
+        # Create dropdown options
+        history_options = ["Select a recent prompt..."] + [
+            f"{item['timestamp']} - {item['result'][:40]}..."
+            for item in st.session_state.prompt_history[:10]
+        ]
+        
+        hist_col1, hist_col2 = st.columns([3, 1])
+        
+        with hist_col1:
+            selected_hist_idx = st.selectbox(
+                "Quick access to your last 10 generated prompts",
+                options=range(len(history_options)),
+                format_func=lambda x: history_options[x],
+                key="main_prompt_history",
+                label_visibility="collapsed"
+            )
+        
+        with hist_col2:
+            if st.button("🗑️ Clear Prompt History", width="stretch"):
+                st.session_state.prompt_history = []
+                st.rerun()
+        
+        if selected_hist_idx > 0:
+            hist_item = st.session_state.prompt_history[selected_hist_idx - 1]
+            
+            with st.expander("📝 View Prompt Details", expanded=True):
+                detail_cols = st.columns([3, 1])
+                
+                with detail_cols[0]:
+                    st.text_area(
+                        "Prompt Content",
+                        value=hist_item['result'],
+                        height=150,
+                        key=f"hist_content_{selected_hist_idx}",
+                        label_visibility="collapsed"
+                    )
+                
+                with detail_cols[1]:
+                    st.write("**Info:**")
+                    task_label = {
+                        "GENERATE_PROMPT": "Basic Prompt",
+                        "GENERATE_DETAILED_PROMPT": "Detailed Prompt",
+                        "GENERATE_JSON_PROMPT": "JSON Prompt"
+                    }.get(hist_item['task'], hist_item['task'])
+                    st.caption(f"**Task:** {task_label}")
+                    st.caption(f"**Model:** {hist_item['model']}")
+                    st.caption(f"**Time:** {hist_item['timestamp']}")
+                    
+                    source_parts = []
+                    if hist_item.get('has_text'):
+                        source_parts.append("Text")
+                    if hist_item.get('has_image'):
+                        source_parts.append("Image")
+                    source = " + ".join(source_parts) if source_parts else "Unknown"
+                    st.caption(f"**Source:** {source}")
+                    
+                    # Copy button
+                    if st.button("📋 Copy", key=f"copy_hist_{selected_hist_idx}", width="stretch"):
+                        try:
+                            import pyperclip
+                            pyperclip.copy(hist_item['result'])
+                            st.success("✅ Copied!")
+                        except:
+                            st.info("Use code box")
+                
+                # Code block for easy copying
+                st.code(hist_item['result'], language=None)
+"""
+
     # ============================================================================
     # FOOTER
     # ============================================================================
