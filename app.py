@@ -29,8 +29,9 @@ OPENROUTER_IMAGE_MODELS = {
     "gemini-3-pro-image-preview": "google/gemini-3-pro-image-preview",
     "gpt-5-image-mini": "openai/gpt-5-image-mini",
     "gpt-5-image": "openai/gpt-5-image",
-
-    "riverflow-v2-fast-preview" :"sourceful/riverflow-v2-fast-preview",
+    "riverflow-v2-fast":"sourceful/riverflow-v2-fast",
+    "riverflow-v2-pro":"sourceful/riverflow-v2-pro",
+    # "riverflow-v2-fast-preview" :"sourceful/riverflow-v2-fast-preview",
     "riverflow-v2-standard-preview" :"sourceful/riverflow-v2-standard-preview",
     "riverflow-v2-max-preview" :"sourceful/riverflow-v2-max-preview",
 
