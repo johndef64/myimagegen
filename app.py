@@ -422,16 +422,22 @@ with st.sidebar:
     st.title("🎨 Image Tools")
     page = st.radio(
         "Navigate",
-        ["Image Generator", 
-         "Prompt Generator", 
-         "Image Viewer", 
-         "Prompt Manager", 
+        ["Image Generator",
+         "Google AI Generator",
+         "Prompt Generator",
+         "Image Viewer",
+         "Prompt Manager",
         #  "Audio Generator"
         "ModelsLab Generator"
          ],
         label_visibility="collapsed"
     )
     st.divider()
+
+if page == "Google AI Generator":
+    import google_page
+    google_page.show_google_generator_page()
+    st.stop()
 
 if page == "Image Viewer":
     # Import and run the image viewer page
