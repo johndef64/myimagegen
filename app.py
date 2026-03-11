@@ -27,6 +27,7 @@ OPENROUTER_IMAGE_MODELS = {
     "flux.2-max": "black-forest-labs/flux.2-max",
     "gemini-2.5-flash-image": "google/gemini-2.5-flash-image",
     "gemini-3-pro-image-preview": "google/gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview": "google/gemini-3.1-flash-image-preview",
     "gpt-5-image-mini": "openai/gpt-5-image-mini",
     "gpt-5-image": "openai/gpt-5-image",
     "riverflow-v2-fast":"sourceful/riverflow-v2-fast",
@@ -277,7 +278,7 @@ def generate_image(prompt, api_key, model_name, aspect_ratio, seed, reference_im
                 "aspect_ratio": aspect_ratio
             }}
     
-    if model_name in ["google/gemini-2.5-flash-image", "google/gemini-3-pro-image-preview"]:
+    if model_name in ["google/gemini-2.5-flash-image", "google/gemini-3-pro-image-preview", "google/gemini-3.1-flash-image-preview"]:
         PARAM = {
             "modalities": ["image", "text"],
             "image_config": {
