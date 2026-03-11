@@ -5,9 +5,10 @@ from copy import deepcopy
 
 def load_yaml_file(file_path="prompts.yaml"):
     """Load YAML file"""
-    if os.path.exists("prompts_custom.yaml"):
+    if os.path.exists(os.path.join(os.getcwd(), "prompts", "prompts_custom.yaml")):
         file_path = "prompts_custom.yaml"
     try:
+        file_path = os.path.join(os.getcwd(), "prompts", file_path)
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = yaml.safe_load(f)
