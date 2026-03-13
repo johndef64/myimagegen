@@ -30,7 +30,7 @@ def render_dataset_browser():
                 st.markdown(f"**{len(dataset_items)} items**")
 
                 # Pagination
-                items_per_page = 12
+                items_per_page = 15
                 total_pages = max(1, (len(dataset_items) + items_per_page - 1) // items_per_page)
                 ds_page = st.number_input("Page", min_value=1, max_value=total_pages, value=1, key=f"ds_page_{ds_file_idx}")
                 page_start = (ds_page - 1) * items_per_page
