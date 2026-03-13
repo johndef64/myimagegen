@@ -278,13 +278,24 @@ def generate_image(prompt, api_key, model_name, aspect_ratio, seed, reference_im
                 "aspect_ratio": aspect_ratio
             }}
     
+    SAFETY_SETTINGS_OFF = [
+    {"category": "HARM_CATEGORY_HARASSMENT",        "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH",       "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    ]
+
+    # Nel tuo PARAM esistente, aggiungi:
+
+
     if model_name in ["google/gemini-2.5-flash-image", "google/gemini-3-pro-image-preview", "google/gemini-3.1-flash-image-preview"]:
         PARAM = {
             "modalities": ["image", "text"],
             "image_config": {
                 "aspect_ratio": aspect_ratio,
                 "image_size": "2K"
-            }
+            },
+            "safety_settings": SAFETY_SETTINGS_OFF
         }
     
     print("Generating with params:", PARAM)
@@ -996,6 +1007,70 @@ with col2:
                 except Exception as e:
                     st.error(f"❌ Error: {str(e)}")
                     st.exception(e)
+
+# Dataset box selection for prompt generator
+import glob as _glob
+_database_dir = os.path.join(os.path.dirname(__file__), "database")
+_dataset_files = sorted(_glob.glob(os.path.join(_database_dir, "*.json")))
+# Exclude api_keys.json from datasets
+_dataset_files = [f for f in _dataset_files if os.path.basename(f) != "api_keys.json"]
+
+if _dataset_files:
+    st.divider()
+    st.subheader("📂 Dataset Browser")
+
+    for _ds_file_idx, _ds_file_path in enumerate(_dataset_files):
+        _ds_name = os.path.splitext(os.path.basename(_ds_file_path))[0]
+
+        with st.expander(f"🗂️ Browse: {_ds_name}", expanded=False):
+            with open(_ds_file_path, "r", encoding="utf-8") as _df:
+                _dataset_items = json.load(_df)
+
+            if not _dataset_items:
+                st.info("This dataset is empty.")
+            else:
+                st.markdown(f"**{len(_dataset_items)} items**")
+
+                # Pagination
+                _items_per_page = 12
+                _total_pages = max(1, (len(_dataset_items) + _items_per_page - 1) // _items_per_page)
+                _ds_page = st.number_input("Page", min_value=1, max_value=_total_pages, value=1, key=f"ds_page_{_ds_file_idx}")
+                _page_start = (_ds_page - 1) * _items_per_page
+                _page_items = _dataset_items[_page_start:_page_start + _items_per_page]
+
+                # Display thumbnails in a grid
+                _cols = st.columns(4)
+                for _idx, _item in enumerate(_page_items):
+                    with _cols[_idx % 4]:
+                        _caption_text = _item.get("caption", "No caption")
+                        _thumb = _item.get("thumbnail", "")
+
+                        if _thumb:
+                            try:
+                                st.image(
+                                    f"data:image/jpeg;base64,{_thumb}",
+                                    use_container_width=True
+                                )
+                            except Exception:
+                                st.write("🖼️ *Thumbnail unavailable*")
+                        else:
+                            st.write("🖼️ *No thumbnail*")
+
+                        _short_caption = _caption_text[:80] + "..." if len(_caption_text) > 80 else _caption_text
+                        st.caption(_short_caption)
+
+                        if st.button("📋 Copy Caption", key=f"ds_copy_{_ds_file_idx}_{_ds_page}_{_idx}"):
+                            try:
+                                copy(_caption_text)
+                                st.success("Caption copied!")
+                            except Exception:
+                                pass
+                            st.session_state["ds_selected_caption"] = _caption_text
+
+    # Show selected caption outside the expanders
+    if "ds_selected_caption" in st.session_state and st.session_state["ds_selected_caption"]:
+        st.markdown("**📌 Selected Caption:**")
+        st.code(st.session_state["ds_selected_caption"], language=None)
 
 
 # Quick Prompt Generator Section
