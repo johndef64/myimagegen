@@ -924,6 +924,11 @@ def show_google_generator_page():
                         st.error(f"❌ Error: {str(e)}")
                         st.exception(e)
 
+    # Dataset browser (imported from database_module.py)
+    from database_module import render_dataset_browser
+    render_dataset_browser()
+
+
     # Quick Prompt Generator Section
     st.divider()
     st.subheader("✨ Quick Prompt Generator")

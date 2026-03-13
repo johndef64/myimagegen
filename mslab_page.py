@@ -1163,11 +1163,38 @@ def show_modelslab_generator_page():
                                 "lora_model": lora_model if use_lora else None,
                                 "lora_strength": lora_strength if use_lora else None,
                             })
+      
                         else:  # Qwen Edit
                             generation_kwargs.update({
                                 "resize_mp": resize_mp,
                                 "num_inference_steps": num_inference_steps,
                             })
+
+                        if selected_model == "flux-2-dev":
+                            print(f"Using flux-2-dev specific parameters: strength = {strength}")
+                            generation_kwargs = {
+                                "aspect_ratio": actual_aspect_ratio,
+                                "seed": seed,
+                                # "guidance_scale": guidance_scale,
+                                # "scheduler": scheduler,
+                                "strength": strength,
+                                # "lora_model": lora_model if use_lora else None,
+                                # "lora_strength": lora_strength if use_lora else None,
+                            }
+                            #  param flux-2-dev      {
+                            #     "key": "...",
+                            #     "deploy_type": "flux_2_dev",
+                            #     "prompt": "...",
+                            #     "negative_prompt": "...",
+                            #     "init_image": ["url_immagine"],
+                            #     "width": "1024",
+                            #     "height": "1024",
+                            #     "samples": "1",
+                            #     "strength": 0.7,  # ← questo è l'unico param di controllo img2img confermato
+                            #     "seed": null,
+                            #     "webhook": null,
+                            #     "track_id": null
+                            # }
 
                         response = api.generate(
                             prompt=prompt,
@@ -1196,6 +1223,8 @@ def show_modelslab_generator_page():
                         st.error(f"❌ Error: {str(e)}")
                         st.exception(e)
         
+
+
         # Display completed images
         if st.session_state.completed_images:
             for idx, item in enumerate(st.session_state.completed_images[:5]):
@@ -1261,6 +1290,11 @@ def show_modelslab_generator_page():
                                     mime="image/png",
                                     key=f"comp_{idx}"
                                 )
+
+    
+    # Dataset browser (imported from database_module.py)
+    from database_module import render_dataset_browser
+    render_dataset_browser()
 
     """
     # ho dovuto commentare tutto perchè, dopo la prima generazione lapp si blocca e non genera piu nulla, anche l altre pagine si bloccano
