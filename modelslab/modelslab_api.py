@@ -136,7 +136,7 @@ class ModelCapability:
 # V6 models - support both txt2img and img2img (except noted)
 V6_MODELS = [
     "qwen", "z-image-turbo", "z-image-base", "flux", "fluxdev", 
-    "flux-2-dev", "flux-kontext-dev"
+    "flux-2-dev", "flux-kontext-dev", "flux-klein"
 ]
 
 # V7 models (use different endpoints)
@@ -155,7 +155,7 @@ INIT_IMAGE_AS_STRING_MODELS = ["flux-kontext-dev"]
 IMG2IMG_ONLY_MODELS = ["flux-kontext-dev"]
 
 # Models that require scheduler field for img2img
-SCHEDULER_REQUIRED_FOR_IMG2IMG = ["flux", "fluxdev", "flux-2-dev"]
+SCHEDULER_REQUIRED_FOR_IMG2IMG = ["flux", "fluxdev", "flux-2-dev", "flux-klein"]
 
 # Model configurations with default parameters
 MODEL_CONFIGS = {
@@ -219,6 +219,18 @@ MODEL_CONFIGS = {
         "init_image_as_list": True,
         "requires_scheduler": True,  # Required for img2img
     },
+    "flux-klein":    {
+        "num_inference_steps": 28,
+        "strength": 0.7,
+        "api_version": "v6",
+        "endpoint_txt2img": Endpoint.TXT2IMG,
+        "endpoint_img2img": Endpoint.IMG2IMG,
+        "supports_txt2img": True,
+        "supports_img2img": True,
+        "init_image_as_list": True,
+        "requires_scheduler": True,  # Required for img2img
+    },
+
     "flux-2-dev": {
         "num_inference_steps": 28,
         "strength": 0.7,
@@ -491,6 +503,31 @@ def show_image_thumbnail(
         display(IPyImage(filename=img_source, width=size[0], height=size[1]))
 
 
+from PIL import Image, ImageOps, PngImagePlugin
+def save_image_with_metadata(image: Image.Image, prompt: str, model_name: str, 
+                             seed: int, aspect_ratio: str, request_id: str = "",
+                             output_folder: str = "outputs") -> str:
+    """Save image with metadata to outputs folder"""
+    metadata = PngImagePlugin.PngInfo()
+    metadata.add_text("Prompt", prompt)
+    metadata.add_text("Model", model_name)
+    metadata.add_text("Seed", str(seed))
+    metadata.add_text("Aspect_Ratio", aspect_ratio)
+    metadata.add_text("Request_ID", request_id)
+    metadata.add_text("Generator", "ModelsLab")
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    prompt_short = prompt[:30].replace(" ", "_").replace("\n", "_")
+    prompt_short = "".join(c for c in prompt_short if c.isalnum() or c in ('_', '-'))
+    model_name_short = model_name.split("/")[-1] if "/" in model_name else model_name
+    
+    os.makedirs(output_folder, exist_ok=True)
+    filename = os.path.join(output_folder, f"{prompt_short}_{model_name_short}_{timestamp}.png")
+    image.save(filename, pnginfo=metadata)
+    print(f"Saved image to {filename} with metadata: Prompt='{prompt[:30]}', Model='{model_name}', Seed={seed}, Aspect Ratio='{aspect_ratio}'")
+    return filename
+
+
 def save_image_from_base64(
     base64_data: str,
     filepath: str
@@ -516,7 +553,8 @@ def save_image_from_base64(
 
 def save_image_from_url(
     url: str,
-    filepath: str
+    filepath: str,
+    metadata: Optional[Dict[str, str]] = None
 ) -> str:
     """
     Download and save an image from URL.
@@ -540,9 +578,17 @@ def save_image_from_url(
     else:
         img_data = response.content
     
-    with open(filepath, "wb") as img_file:
-        img_file.write(img_data)
-    
+    if metadata and filepath.lower().endswith(".png"):
+        image = Image.open(BytesIO(img_data))
+        png_metadata = PngImagePlugin.PngInfo()
+        for key, value in metadata.items():
+            png_metadata.add_text(key, value)
+        image.save(filepath, pnginfo=png_metadata)
+        return filepath
+    else:
+        with open(filepath, "wb") as img_file:
+            img_file.write(img_data)
+        
     return filepath
 
 
@@ -555,6 +601,7 @@ def clean_filenames_in_folder(folder: str, replace_spaces: bool = True) -> None:
                 os.path.join(folder, filename),
                 os.path.join(folder, new_filename)
             )
+
 
 
 # ============================================================================
@@ -1978,3 +2025,193 @@ def create_api(api_key: Optional[str] = None, **kwargs) -> ModelsLabAPI:
     """Create and return a ModelsLabAPI instance."""
     return ModelsLabAPI(api_key=api_key, **kwargs)
 
+
+# ============================================================================
+# MAIN / EXAMPLE USAGE
+# ============================================================================
+
+if __name__ == "__main__":
+
+    # custom scripts
+    from mlslab_utils import *
+    from prompt_manager_page import load_yaml_file
+    folder = "../images/fem/bellezze"
+    handles = {
+    0: "melikedhn",
+    1: "rapuanomarisa",
+    2: "mellaanniee",
+    3: "veronicacanova",
+    4: "siimonalucio",
+    5: "erikaprinzi"
+}
+    image_bellez = get_images_paths(folder, handle=handles[0])
+
+    folder = "G:\\Altri computer\\Horizon\\horizon_workspace\\ai-gen\\ai-art\\my-art\\my-lora\\lora_diana\\lora_train\\training_set_82"
+    show_folder_images_thumbnails(folder, max_images=15, thumb_size=(10, 10))
+    handle = ["03","09","14","20"]
+    handle = ".jpg"
+    image_files = get_images_paths(folder, handle=handle)
+
+    # get prompts_custom.yaml
+    prompts_yaml = load_yaml_file("..\prompts\prompts_custom.yaml")
+    prompt_a = prompts_yaml["edit_prompts"]["realism"][1]#.keys()
+    print("Promt: ", prompt_a[:100], "...\n\n")
+
+    # Example usage
+    api = ModelsLabAPI()
+    test_links =[
+
+"https://i.pinimg.com/736x/fc/d5/34/fcd5345c6e8dbbb2eb882f86726adcfa.jpg",
+"https://i.pinimg.com/1200x/cf/85/9e/cf859e697fc3c839d2f64c5362f0d6c4.jpg",
+"https://i.pinimg.com/1200x/48/56/4e/48564e0729e9852bd48ad049a4dafe28.jpg",
+"https://i.pinimg.com/736x/a8/24/e1/a824e19da371b2f841a2f75825e61134.jpg",
+"https://i.pinimg.com/736x/e0/61/57/e06157e7e2537c290910d20f6430cd67.jpg",
+"https://i.pinimg.com/736x/3f/95/12/3f9512621c243e135ff821d573a127ae.jpg",
+"https://i.pinimg.com/736x/38/cb/40/38cb409147733dfeb3864313df3e6d72.jpg",
+"https://i.pinimg.com/736x/36/7f/88/367f8827543bad4dbd495c4aff644a91.jpg",
+"https://i.pinimg.com/1200x/07/3c/6b/073c6b1e41238b508681fe1f03b3fabc.jpg",
+"https://i.pinimg.com/736x/da/1d/39/da1d39b6fb2f1a801fa9e3c285d9c9ed.jpg",
+"https://i.pinimg.com/736x/c8/7f/c2/c87fc228231ae59a6367fb434aebb989.jpg",
+"https://i.pinimg.com/1200x/94/45/78/944578982d3a5b95968917e7d9a823a5.jpg",
+"https://i.pinimg.com/736x/4c/f7/69/4cf76954fe8a1b0398ade0b1d63ebb3a.jpg",
+"https://i.pinimg.com/736x/95/24/e8/9524e8d4d817776253ddf563899026f1.jpg",
+"https://i.pinimg.com/1200x/14/5d/72/145d72d3092ab2f277eab0de7935d74e.jpg",
+    ]
+    test_link = "https://i.pinimg.com/736x/f4/17/3f/f4173ffed29e6bfe86b6c735e12bcb22.jpg"
+    test_path = "..\\images\\fem\\bellezze\\angelaangelino217462786763624370684492891260608152900.jpg"
+    with open("anime_prompts.json", "r", encoding="utf-8") as f:
+        aniem_prompts = json.load(f)
+        animew_prompts = aniem_prompts["prompts"]
+        aniem_lora = 'fc-anime-lora-flux-fcanimeflux'
+
+
+#%%
+
+#%%
+if __name__ == "__main__":
+    
+    # Text to image example
+    response = api.generate(
+        prompt="A beautiful Italian woman portrait, professional photography, with neon pink lipstick and nail polish, intricate details, cinematic lighting, 8k resolution",
+        model_id="flux-2-dev",
+        # model_id="flux-kontext-dev",
+        # model_id="fluxdev",
+        aspect_ratio="3:4"
+    )
+    print(f"Request ID: {response.request_id}")
+    print(f"Status: {response.status}")
+#%%
+if __name__ == "__main__":
+    api.fetch_successful_results()
+#%%
+# Image to image example
+if __name__ == "__main__":
+        for link in test_links[:1]:
+            response = api.generate(
+                # prompt="Transform the photo to anime style",
+                # prompt= "Convert this photo into a DeviantArt-style digital painting, semi-realistic anime proportions, strong dramatic lighting, textured brush strokes, detailed shading, fantasy illustration vibe, keep the same character and pose",
+                # prompt = "Restyle this photo into Studio Ghibli-inspired anime art, soft colors, painterly shading, gentle lighting, natural atmosphere, simplified but expressive facial features, keep the same composition and scene layout.",
+                prompt= "The girl is holding a red apple with her perfect squared red nails. She has multile silver rings. Fetish style photography, high detail, sharp focus, professional lighting, 8k",
+                images=[test_path],
+                # images=[link],
+                model_id="flux-kontext-dev",
+                # model_id="fluxdev",
+                # lora_model=aniem_lora,
+            )
+        
+#%%
+# Qwen edit example
+if __name__ == "__main__":
+        prompt = "The girl is holding a red apple with her perfect squared red nails. She has multile silver rings. Fetish style photography, high detail, sharp focus, professional lighting, 8k"
+        
+        for link in test_links[:1]:
+            response = api.generate(
+                prompt=prompt,
+                images = [link],
+                # images=[test_path],
+                model_id="qwen-edit-2511"
+            )
+            time.sleep(1)
+#%%
+if __name__ == "__main__":
+    rotate_promt = "- Show the subject from a different angle, rotating the perspective to highlight facial features. "
+    r2 = "- Show the subject's face from a different angle, rotating the perspective to highlight facial features."
+    prompt = rotate_promt
+    prompt = prompt_a.replace("Her gaze is empty yet deeply sensual.", "")
+    # prompt = prompt.replace("and vulgar.", "and vulgar. Looking at the camera with a seductive and inviting expression.")
+    path = "..\images\persona\other\best.milf\56.jpg"
+    path = image_files[0]
+    for path in image_files[15:18]:
+        response = api.generate(
+                    prompt=prompt,
+                    images = [path],
+                    # images=[test_path],
+                    model_id="qwen-edit-2511"
+                )
+        time.sleep(1)
+#%%
+
+#%%
+if __name__ == "__main__":
+    from server.image_server import ImageServer, add_image_to_server
+    image_server = ImageServer(port=9999)
+    vioce_sample_path = image_files[1]
+    url1 = add_image_to_server(vioce_sample_path, image_server)
+    
+    response = api.generate(
+                prompt=prompt_a,
+                images = [url1],
+                # images=[test_path],
+                model_id="grok-imagine-image-i2i"
+            )
+#%%
+
+
+#%%
+
+#%%
+# Wait for result and save
+if __name__ == "__main__":
+        result = api.wait_for_result(response.request_id)
+        if result.is_success:
+            api.save_result(result,folder="outputs", show_thumbnail=True)
+#%%
+    # Debug: print response (only in main)
+    # print(response)
+
+
+# %%
+# test saving from api
+if __name__ == "__main__":
+    api.save_all_successful(folder="outputs", show_thumbnail=True)
+
+#%%
+# test saving from api
+if __name__ == "__main__":
+    request_ids = api.get_all_request_ids()
+    print(f"Loaded {len(request_ids)} request IDs from log")
+    request_id_alredy_in_folder = []
+    for rid in request_ids:
+        filename = f"{rid}_0.png"
+        filepath = os.path.join("outputs", filename)
+        if os.path.exists(filepath):
+            print(f"File already exists for request {rid}, skipping: {filepath}")
+            request_id_alredy_in_folder.append(rid)
+            continue
+        else:
+            result = api.fetch_result(rid)
+            print(f"Request {rid} - Status: {result.status}")
+            if result.is_success:
+                api.save_result(result, 
+                                folder="outputs",
+                                show_thumbnail=True
+                                )
+
+# %%
+# ✅ CORRETTO - passa una funzione che verrà eseguita da with_retry
+if __name__ == "__main__":
+    response = with_retry(
+        lambda: api.img2img(prompt="Transform to anime", images=[link]),
+        max_retries=3
+    )
+# %%

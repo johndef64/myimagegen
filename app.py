@@ -38,7 +38,7 @@ OPENROUTER_IMAGE_MODELS = {
 
     "seedream-4.5": "bytedance-seed/seedream-4.5",
 }
-default_model = "gemini-2.5-flash-image"
+default_model = "gemini-3.1-flash-image-preview" #"gemini-2.5-flash-image"
 
 ASPECT_RATIOS = {
     "1:1 (1024×1024)": "1:1",
@@ -279,14 +279,12 @@ def generate_image(prompt, api_key, model_name, aspect_ratio, seed, reference_im
             }}
     
     SAFETY_SETTINGS_OFF = [
-    {"category": "HARM_CATEGORY_HARASSMENT",        "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH",       "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HARASSMENT",        "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH",       "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_CIVIC_INTEGRITY",   "threshold": "BLOCK_NONE"},
     ]
-
-    # Nel tuo PARAM esistente, aggiungi:
-
 
     if model_name in ["google/gemini-2.5-flash-image", "google/gemini-3-pro-image-preview", "google/gemini-3.1-flash-image-preview"]:
         PARAM = {
@@ -306,17 +304,60 @@ def generate_image(prompt, api_key, model_name, aspect_ratio, seed, reference_im
         seed=seed,
         extra_body=PARAM
     )
-    
+
     # Extract generated image
     response = response_full.choices[0].message
-    if response.images:
-        base64_data = response.images[0]['image_url']['url']
-        header, encoded = base64_data.split(",", 1)
-        image_data = base64.b64decode(encoded)
-        image = Image.open(BytesIO(image_data))
+
+    # Try multiple ways to extract image from response
+    image = None
+
+    # Method 1: response.images (some models)
+    if hasattr(response, 'images') and response.images:
+        try:
+            base64_data = response.images[0]['image_url']['url']
+            if ',' in base64_data:
+                _, encoded = base64_data.split(",", 1)
+            else:
+                encoded = base64_data
+            image = Image.open(BytesIO(base64.b64decode(encoded)))
+        except Exception:
+            pass
+
+    # Method 2: content list with image parts
+    if image is None and hasattr(response, 'content') and isinstance(response.content, list):
+        for part in response.content:
+            if hasattr(part, 'type') and part.type == 'image_url':
+                try:
+                    url = part.image_url.url if hasattr(part, 'image_url') else part.get('image_url', {}).get('url', '')
+                    if ',' in url:
+                        _, encoded = url.split(",", 1)
+                    else:
+                        encoded = url
+                    image = Image.open(BytesIO(base64.b64decode(encoded)))
+                    break
+                except Exception:
+                    pass
+
+    # Method 3: inline base64 in content string
+    if image is None and hasattr(response, 'content') and isinstance(response.content, str):
+        import re
+        b64_match = re.search(r'data:image/[^;]+;base64,([A-Za-z0-9+/=]+)', response.content)
+        if b64_match:
+            try:
+                image = Image.open(BytesIO(base64.b64decode(b64_match.group(1))))
+            except Exception:
+                pass
+
+    if image:
         return image, aspect_ratio
-    
-    return None, aspect_ratio
+
+    # No image found — build debug info for the caller
+    debug_info = {}
+    debug_info["text"] = getattr(response, 'content', None) if isinstance(getattr(response, 'content', None), str) else str(getattr(response, 'content', ''))
+    debug_info["finish_reason"] = getattr(response_full.choices[0], 'finish_reason', None)
+    debug_info["attrs"] = [a for a in dir(response) if not a.startswith('_')]
+
+    return None, aspect_ratio, debug_info
 
 def save_image_with_metadata(image, prompt, model_name, seed, aspect_ratio,
                               output_folder="outputs", reduce_quality=False):
@@ -885,7 +926,7 @@ with col2:
                 try:
                     model_full_name = OPENROUTER_IMAGE_MODELS[selected_model]
                     
-                    generated_image, used_aspect_ratio = generate_image(
+                    _result = generate_image(
                         prompt=prompt,
                         api_key=st.session_state.api_key,
                         model_name=model_full_name,
@@ -895,6 +936,9 @@ with col2:
                         use_image_aspect_ratio=use_auto_aspect,
                         max_image_size=max_image_size
                     )
+                    generated_image = _result[0]
+                    used_aspect_ratio = _result[1]
+                    _debug_info = _result[2] if len(_result) > 2 else None
                     
                     if generated_image:
                         st.success("✅ Image generated successfully!")
@@ -1003,7 +1047,16 @@ with col2:
                         
                     else:
                         st.error("❌ Failed to generate image. No image data returned.")
-                        
+                        if _debug_info:
+                            with st.expander("🔍 Response Debug Info", expanded=True):
+                                if _debug_info.get("text"):
+                                    st.markdown("**Response text:**")
+                                    st.code(_debug_info["text"], language=None)
+                                if _debug_info.get("finish_reason"):
+                                    st.markdown(f"**Finish reason:** `{_debug_info['finish_reason']}`")
+                                if _debug_info.get("attrs"):
+                                    st.markdown(f"**Response attributes:** `{', '.join(_debug_info['attrs'])}`")
+
                 except Exception as e:
                     st.error(f"❌ Error: {str(e)}")
                     st.exception(e)

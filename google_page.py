@@ -61,6 +61,14 @@ ASPECT_RATIOS = {
     "21:9 (1536x672)": "21:9"
 }
 
+OUTPUT_RESOLUTIONS = {
+    "0.5K (512px)":  "512x512",
+    "1K (1024px)":   "1024x1024",
+    "2K (2048px)":   "2048x2048",
+    "4K (4096px)":   "4096x4096",
+}
+DEFAULT_RESOLUTION = "1K (1024px)"
+
 SAFETY_SETTINGS = [
     types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
     types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
@@ -232,7 +240,7 @@ def pil_to_bytes(image, format="PNG"):
 
 def generate_image_google(prompt, api_key, model_key, aspect_ratio, seed,
                           reference_images=None, use_image_aspect_ratio=False,
-                          max_image_size=1024):
+                          max_image_size=1024, output_resolution="1024"):
     """Generate image using Google AI Studio API"""
 
     if not seed:
@@ -247,7 +255,7 @@ def generate_image_google(prompt, api_key, model_key, aspect_ratio, seed,
 
     # Check if this is an Imagen model (different API)
     if model_key in IMAGEN_MODELS:
-        return _generate_imagen(client, model_id, prompt, aspect_ratio, seed)
+        return _generate_imagen(client, model_id, prompt, aspect_ratio, seed, output_resolution)
 
     # Gemini models - use generate_content with image modality
     contents = []
@@ -271,6 +279,9 @@ def generate_image_google(prompt, api_key, model_key, aspect_ratio, seed,
             response_modalities=["TEXT", "IMAGE"],
             safety_settings=SAFETY_SETTINGS,
             seed=seed,
+            image_config=types.ImageConfig(
+                aspect_ratio=aspect_ratio,
+            ),
         )
     )
 
@@ -300,7 +311,7 @@ def generate_image_google(prompt, api_key, model_key, aspect_ratio, seed,
     return image, aspect_ratio, response_text
 
 
-def _generate_imagen(client, model_id, prompt, aspect_ratio, seed):
+def _generate_imagen(client, model_id, prompt, aspect_ratio, seed, output_resolution="1024"):
     """Generate image using Imagen models (different API)"""
     try:
         response = client.models.generate_images(
@@ -311,6 +322,7 @@ def _generate_imagen(client, model_id, prompt, aspect_ratio, seed):
                 aspect_ratio=aspect_ratio,
                 seed=seed,
                 safety_filter_level="BLOCK_NONE",
+                image_size=output_resolution,
             )
         )
 
@@ -480,6 +492,16 @@ def show_google_generator_page():
             key="google_aspect_ratio"
         )
         aspect_ratio = ASPECT_RATIOS[aspect_ratio_display]
+
+        # Output resolution
+        output_resolution_display = st.selectbox(
+            "Output Resolution",
+            options=list(OUTPUT_RESOLUTIONS.keys()),
+            index=list(OUTPUT_RESOLUTIONS.keys()).index(DEFAULT_RESOLUTION),
+            help="Resolution of the generated image. 1K is the default.",
+            key="google_output_resolution"
+        )
+        output_resolution = OUTPUT_RESOLUTIONS[output_resolution_display]
 
         PROMPTS_FILES = {"base": "prompts",
                          "custom": "prompts_custom",
@@ -817,7 +839,8 @@ def show_google_generator_page():
                             seed=seed,
                             reference_images=reference_images,
                             use_image_aspect_ratio=use_auto_aspect,
-                            max_image_size=max_image_size
+                            max_image_size=max_image_size,
+                            output_resolution=output_resolution
                         )
 
                         if generated_image:
@@ -836,6 +859,7 @@ def show_google_generator_page():
                             - Model: `{selected_model}`
                             - API Model ID: `{GOOGLE_IMAGE_MODELS[selected_model]}`
                             - Aspect Ratio: `{used_aspect_ratio}`
+                            - Resolution: `{output_resolution_display}`
                             - Seed: `{seed if seed else 'Random'}`
                             - Reference Images: `{len(reference_images) if reference_images else 0}`
                             """)
@@ -1219,3 +1243,64 @@ def show_google_generator_page():
 # Run standalone or as imported page
 if __name__ == "__main__":
     show_google_generator_page()
+
+"""
+Ecco il quadro aggiornato al marzo 2026, basato sulla documentazione ufficiale e sulle ultime notizie:
+
+---
+
+## 🆓 Free Tier Google AI Studio — Limiti per generazione immagini
+
+### Modelli **Gemini** (image generation via `generate_content`)
+
+| Modello | RPM | RPD (al giorno) |
+|---|---|---|
+| **gemini-2.5-flash-image** | ~10 | ~20–50 ⚠️ |
+| **gemini-3-pro-image-preview** (Nano Banana Pro) | ~10 | ~20–100 ⚠️ |
+| **gemini-3.1-flash-image-preview** (Nano Banana Flash) | ~10 | ~20–100 ⚠️ |
+
+⚠️ A dicembre 2025 Google ha tagliato drasticamente i limiti free: Gemini 2.5 Flash è passato da ~250 richieste/giorno a circa 20, e Gemini 2.5 Pro è stato rimosso del tutto dal free tier per molti account. I modelli "Nano Banana" (Gemini 3.x image) sono in **preview**, e per i modelli in preview i limiti free sono approssimativamente 10–50 RPM e 100+ RPD, ma molti utenti riportano limiti effettivi molto più restrittivi.
+
+---
+
+### 💡 Consiglio pratico
+
+Attenzione: quando attivi il billing su un progetto Google AI, il free tier viene completamente rimosso — ogni chiamata API diventa a pagamento. Non esiste un sistema ibrido "X richieste gratis poi a pagamento".
+
+Per vedere i tuoi limiti **esatti e aggiornati** in tempo reale, vai su: **[aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit)** — la pagina mostra i limiti specifici del tuo progetto e tier corrente.
+
+
+Ecco le tabelle in markdown:
+
+---
+
+### Gemini (Nano Banana) — via `generate_content`
+
+| Modello | Model ID | Free tier | Costo/img (paid) | Note |
+|---|---|---|---|---|
+| Gemini 2.5 Flash Image | `gemini-2.5-flash-image` | ✅ Disponibile | ~$0.039 (1024px) | $30/1M token · 1290 token/img |
+| Gemini 3 Pro Image | `gemini-3-pro-image-preview` | ❌ No | ~$0.067 (1024px) | $60/1M token · 1120 token/img |
+| Gemini 3.1 Flash Image | `gemini-3.1-flash-image-preview` | ❌ No | ~$0.067 (1024px) | $60/1M token · 1120 token/img |
+
+---
+
+### Imagen 4 — via `generate_images`
+
+| Modello | Model ID | Free tier | Costo/img (paid) | Note |
+|---|---|---|---|---|
+| Imagen 4 Standard | `imagen-4.0-generate-001` | ❌ No | $0.04 | Qualità massima |
+| Imagen 4 Ultra | `imagen-4.0-ultra-generate-001` | ❌ No | $0.06 | Preview, qualità ultra |
+| Imagen 4 Fast | `imagen-4.0-fast-generate-001` | ❌ No | $0.02 | Più economico |
+
+---
+
+### Costo per risoluzione — modelli Gemini
+
+| Risoluzione | Token | Gemini 2.5 Flash ($30/1M) | Gemini 3.x ($60/1M) |
+|---|---|---|---|
+| 512px | 747 | ~$0.022 | ~$0.045 |
+| 1024px | 1120–1290 | ~$0.039 | ~$0.067 |
+| 2048px | 1680 | ~$0.050 | ~$0.101 |
+| 4096px | 2520 | ~$0.076 | ~$0.151 |
+
+"""
