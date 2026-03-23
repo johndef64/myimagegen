@@ -758,8 +758,10 @@ def show_modelslab_generator_page():
     col1, col2 = st.columns([1, 1])
 
     with col1:
+
+
         # header less the subheader
-        st.subheader("📝 Prompt & Reference Images", ) 
+        st.subheader("📝 Define Prompt", ) 
         
         # Prompt source selector
         prompt_source = st.radio(
@@ -867,7 +869,8 @@ def show_modelslab_generator_page():
                 # Section mapping
                 section_keys = {
                     "Create": "create_prompts",
-                    "Edit": "edit_prompts"
+                    "Edit": "edit_prompts",
+                    "Qwen Edit": "qwen_edit"
                 }
                 available_sections = [s for s, k in section_keys.items() if k in prompts_data]
                 
@@ -1007,6 +1010,7 @@ def show_modelslab_generator_page():
                 key="custom_prompt"
             )
         
+
         # Reference images upload (for img2img modes)
         reference_images = None
         if generation_mode != "Text to Image":
@@ -1039,6 +1043,10 @@ def show_modelslab_generator_page():
                             st.image(img, caption=f"Ref {idx+1}", width=150)
                         st.caption(f"Size: {img.size[0]}×{img.size[1]}")
         
+
+
+    with col2:
+        st.subheader("🖼️ Generate Image")
         # Generate button
         can_generate = prompt and st.session_state.mslab_api_key
         if generation_mode != "Text to Image":
@@ -1048,11 +1056,9 @@ def show_modelslab_generator_page():
             "🎨 Generate Image",
             type="primary",
             use_container_width=True,
-            disabled=not can_generate
+            disabled= not can_generate
         )
-
-    with col2:
-        st.subheader("🖼️ Generated Images")
+        
         fetch_results_btn = st.button(
             "🔄 Fetch Pending Results",
             use_container_width=True,
@@ -1152,6 +1158,7 @@ def show_modelslab_generator_page():
                                 "scheduler": scheduler,
                                 "lora_model": lora_model if use_lora else None,
                                 "lora_strength": lora_strength if use_lora else None,
+                                # "resolution": "1.3K"
                             })
                         elif generation_mode == "Image to Image":
                             generation_kwargs.update({

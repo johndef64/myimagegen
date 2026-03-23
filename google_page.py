@@ -660,7 +660,10 @@ def show_google_generator_page():
             if st.session_state.google_prompts_data:
                 prompts_data = st.session_state.google_prompts_data
 
-                section_keys = {"Create": "create_prompts", "Edit": "edit_prompts"}
+                section_keys = {"Create": "create_prompts", 
+                                "Edit": "edit_prompts", 
+                                "Qwen Edit": "qwen_edit",
+                                "NanoBanana Edit": "nano_banana_edit"}
                 available_sections = [s for s, k in section_keys.items() if k in prompts_data]
 
                 if available_sections:
@@ -811,6 +814,10 @@ def show_google_generator_page():
         elif not uploaded_files:
             reference_images = None
 
+
+
+    with col2:
+        st.subheader("🖼️ Generated Image")
         # Generate button
         generate_btn = st.button(
             "🎨 Generate Image",
@@ -819,9 +826,6 @@ def show_google_generator_page():
             disabled=not (prompt and st.session_state.google_api_key),
             key="google_generate_btn"
         )
-
-    with col2:
-        st.subheader("🖼️ Generated Image")
 
         if generate_btn:
             if not st.session_state.google_api_key:

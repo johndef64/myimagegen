@@ -905,6 +905,10 @@ with col1:
     else:
         reference_images = None
     
+
+
+with col2:
+    st.subheader("🖼️ Generated Image")
     # Generate button
     generate_btn = st.button(
         "🎨 Generate Image",
@@ -912,9 +916,6 @@ with col1:
         width="stretch",
         disabled=not (prompt and st.session_state.api_key)
     )
-
-with col2:
-    st.subheader("🖼️ Generated Image")
     
     if generate_btn:
         if not st.session_state.api_key:
