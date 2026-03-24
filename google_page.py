@@ -526,22 +526,51 @@ def _batch_log_save(jobs):
 
 
 def _batch_save_images_to_disk(job_record):
-    """Save fetched result images to outputs/batch/ and store paths in job_record."""
+    """Save fetched result images to outputs/batch/ with descriptive filenames and PNG metadata."""
     result_images = job_record.get('result_images', [])
     if not result_images:
         return
+
     safe_ts = job_record.get('submitted_at', 'batch').replace(' ', '_').replace(':', '-')
+    model_short = job_record.get('model', 'batch').split('/')[-1]
     folder = os.path.join("outputs", "batch", safe_ts)
     os.makedirs(folder, exist_ok=True)
+
+    # Build a key→prompt lookup from the requests list so we can embed prompt in metadata
+    # Each request entry covers num_images images; expand into per-key mapping
+    key_to_prompt = {}
+    req_idx = 1
+    for req in job_record.get('requests', []):
+        for _ in range(req.get('num_images', 1)):
+            key_to_prompt[f"img_{req_idx}"] = req.get('prompt', '')
+            req_idx += 1
+
     paths = []
     for img_i, img_data in enumerate(result_images):
-        fname = os.path.join(folder, f"{img_data.get('key', f'img_{img_i}')}.png")
+        key = img_data.get('key', f'img_{img_i + 1}')
+        prompt = key_to_prompt.get(key, '')
+        prompt_slug = prompt[:40].replace(' ', '_').replace('\n', '_')
+        prompt_slug = ''.join(c for c in prompt_slug if c.isalnum() or c in ('_', '-'))
+
+        fname = os.path.join(
+            folder,
+            f"{key}_{model_short}_{prompt_slug}.png" if prompt_slug else f"{key}_{model_short}.png"
+        )
+
         try:
             pil_img = Image.open(BytesIO(img_data['data']))
-            pil_img.save(fname, format="PNG")
+            metadata = PngImagePlugin.PngInfo()
+            metadata.add_text("Prompt", prompt)
+            metadata.add_text("Model", job_record.get('model', ''))
+            metadata.add_text("BatchJob", job_record.get('job_name', ''))
+            metadata.add_text("Key", key)
+            metadata.add_text("SubmittedAt", job_record.get('submitted_at', ''))
+            metadata.add_text("Provider", "Google AI Studio Batch API")
+            pil_img.save(fname, format="PNG", pnginfo=metadata)
             paths.append(fname)
         except Exception:
             paths.append(None)
+
     job_record['saved_image_paths'] = paths
 
 
@@ -1451,7 +1480,7 @@ def show_google_generator_page():
             batch_model_input = st.selectbox(
                 "Model",
                 options=BATCH_COMPATIBLE_MODELS,
-                index=0,
+                index=1,
                 help="Only Gemini multimodal models support Batch image generation",
                 key="google_batch_model_input"
             )
@@ -1737,6 +1766,13 @@ def show_google_generator_page():
                                      use_container_width=True, type="primary"):
                             with st.spinner("Downloading results..."):
                                 fetch_google_batch_results(job_record, st.session_state.google_api_key)
+                            saved = [p for p in job_record.get('saved_image_paths', []) if p]
+                            if saved:
+                                safe_ts = job_record.get('submitted_at', '').replace(' ', '_').replace(':', '-')
+                                st.success(
+                                    f"💾 {len(saved)} image(s) auto-saved to "
+                                    f"`outputs/batch/{safe_ts}/`"
+                                )
                             st.rerun()
 
                 # Display fetched images
@@ -1746,15 +1782,20 @@ def show_google_generator_page():
                     img_per_row = 4
                     img_cols = st.columns(img_per_row)
                     for img_i, img_data in enumerate(result_images):
+
                         with img_cols[img_i % img_per_row]:
                             try:
                                 pil_img = Image.open(BytesIO(img_data['data']))
-                                st.image(pil_img, use_container_width=True,
+                                if not stealth_mode:
+                                    st.image(pil_img, use_container_width=True,
                                          caption=f"#{img_i+1} {img_data.get('key','')}")
+                                else:
+                                    st.caption(f"Image #{img_i+1}")
                                 fname = (
                                     f"batch_{job_record['submitted_at'][:10]}_"
                                     f"{img_data.get('key','img')}_{img_i}.png"
                                 ).replace(" ", "_").replace(":", "-")
+
                                 # Convert to PNG bytes for download
                                 dl_buf = BytesIO()
                                 pil_img.save(dl_buf, format="PNG")
