@@ -62,10 +62,10 @@ ASPECT_RATIOS = {
 }
 
 OUTPUT_RESOLUTIONS = {
-    "0.5K (512px)":  "512x512",
-    "1K (1024px)":   "1024x1024",
-    "2K (2048px)":   "2048x2048",
-    "4K (4096px)":   "4096x4096",
+    "0.5K (512px)":  "512",
+    "1K (1024px)":   "1K",
+    "2K (2048px)":   "2K",
+    "4K (4096px)":   "4K",
 }
 DEFAULT_RESOLUTION = "1K (1024px)"
 
@@ -260,7 +260,9 @@ def generate_image_google(prompt, api_key, model_key, aspect_ratio, seed,
     # Gemini models - use generate_content with image modality
     contents = []
 
-    # Add reference images if provided and model supports it
+    # Add reference images if provided and model supports it.
+    # ORDER IS PRESERVED: images are added in the same order as displayed in the UI
+    # so prompts can safely reference "the first image", "the second image", etc.
     if reference_images and model_key in MODELS_WITH_IMG2IMG:
         for ref_img in reference_images:
             resized = resize_image(ref_img, max_image_size)
@@ -269,7 +271,7 @@ def generate_image_google(prompt, api_key, model_key, aspect_ratio, seed,
                 types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
             )
 
-    # Add the text prompt
+    # Text prompt is always added AFTER all images
     contents.append(prompt)
 
     response = client.models.generate_content(
@@ -281,6 +283,7 @@ def generate_image_google(prompt, api_key, model_key, aspect_ratio, seed,
             seed=seed,
             image_config=types.ImageConfig(
                 aspect_ratio=aspect_ratio,
+                image_size=output_resolution,
             ),
         )
     )
@@ -798,6 +801,11 @@ def show_google_generator_page():
 
         if uploaded_files:
             st.write(f"**{len(uploaded_files)} image(s) uploaded**")
+            # st.info(
+            #     "The images are sent to the model **in this exact order** (left to right, top to bottom). "
+            #     "Use 'the first image', 'the second image', etc. in your prompt to reference them.",
+            #     icon="ℹ️"
+            # )
             ref_cols = st.columns(min(len(uploaded_files), 3))
             reference_images = []
 
@@ -809,8 +817,8 @@ def show_google_generator_page():
 
                 with ref_cols[idx % 3]:
                     if not stealth_mode:
-                        st.image(img, caption=f"Ref {idx+1}", width=150)
-                    st.caption(f"Size: {img.size[0]}x{img.size[1]}")
+                        st.image(img, caption=f"#{idx+1} — {uploaded_file.name}", width=150)
+                    st.caption(f"Request position: **{idx+1}** | {img.size[0]}x{img.size[1]}")
         elif not uploaded_files:
             reference_images = None
 
