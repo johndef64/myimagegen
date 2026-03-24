@@ -36,7 +36,7 @@ GOOGLE_IMAGE_MODELS = {
     "imagen-4.0-ultra-generate-001":"imagen-4.0-ultra-generate-001",
     "imagen-4.0-fast-generate-001":"imagen-4.0-fast-generate-001",
 }
-default_model = "gemini-2.5-flash-image"
+default_model = "gemini-3.1-flash-image-preview"
 
 # Models that support img2img (reference images)
 MODELS_WITH_IMG2IMG =  GOOGLE_IMAGE_MODELS.keys()
@@ -424,6 +424,273 @@ def create_comparison_image(generated_image, reference_images, max_refs=3, promp
     return comparison
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Batch Generator helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Cost per generated image at each resolution (Batch API pricing, USD)
+BATCH_IMAGE_COSTS = {
+    "512": 0.022,   # 0.5K
+    "1K":  0.034,
+    "2K":  0.050,
+    "4K":  0.076,
+}
+
+# Models that work with Batch image generation (Gemini multimodal, not Imagen)
+BATCH_COMPATIBLE_MODELS = [
+    "gemini-2.5-flash-image",
+    "gemini-3.1-flash-image-preview",
+    "gemini-3-pro-image-preview",
+]
+
+
+def _build_batch_jsonl(queue):
+    """Build a list of JSONL request dicts from the batch queue.
+
+    Each queue entry may request N images; we expand that into N individual
+    batch requests (one image per request) with unique keys.
+    Reference images (PIL) are base64-encoded inline.
+    """
+    import base64 as _b64
+
+    requests_data = []
+    req_idx = 1
+    for job in queue:
+        ref_parts = []
+        for ref_img in job.get('ref_images') or []:
+            buf = BytesIO()
+            resized = resize_image(ref_img, 1024)
+            resized.save(buf, format="JPEG")
+            b64 = _b64.b64encode(buf.getvalue()).decode('utf-8')
+            ref_parts.append({
+                "inline_data": {"mime_type": "image/jpeg", "data": b64}
+            })
+
+        for _ in range(job['num_images']):
+            parts = ref_parts + [{"text": job['prompt']}]
+            requests_data.append({
+                "key": f"img_{req_idx}",
+                "request": {
+                    "contents": [{"parts": parts}],
+                    "generation_config": {
+                        "response_modalities": ["TEXT", "IMAGE"],
+                        "image_config": {
+                            "aspect_ratio": job['aspect_ratio'],
+                            "image_size": job['resolution'],
+                        }
+                    }
+                }
+            })
+            req_idx += 1
+    return requests_data
+
+
+BATCH_LOG_FILE = "batch_jobs_log.json"
+
+
+def _batch_log_load():
+    """Load persisted batch job records from disk (strips non-serialisable PIL images)."""
+    if not os.path.exists(BATCH_LOG_FILE):
+        return []
+    try:
+        with open(BATCH_LOG_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def _batch_log_save(jobs):
+    """Persist batch job records to disk.
+
+    PIL Image objects and raw image bytes are not JSON-serialisable, so we
+    strip them before writing (result_images bytes are saved separately as
+    PNG files; PIL ref_images are never persisted).
+    """
+    serialisable = []
+    for job in jobs:
+        j = {k: v for k, v in job.items() if k not in ('result_images',)}
+        # Strip ref_images (PIL objects) from nested request list too
+        requests_clean = []
+        for req in j.get('requests', []):
+            requests_clean.append({k: v for k, v in req.items() if k != 'ref_images'})
+        j['requests'] = requests_clean
+        # Persist paths to already-saved images instead of raw bytes
+        saved_paths = job.get('saved_image_paths', [])
+        j['saved_image_paths'] = saved_paths
+        serialisable.append(j)
+    try:
+        with open(BATCH_LOG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(serialisable, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _batch_save_images_to_disk(job_record):
+    """Save fetched result images to outputs/batch/ and store paths in job_record."""
+    result_images = job_record.get('result_images', [])
+    if not result_images:
+        return
+    safe_ts = job_record.get('submitted_at', 'batch').replace(' ', '_').replace(':', '-')
+    folder = os.path.join("outputs", "batch", safe_ts)
+    os.makedirs(folder, exist_ok=True)
+    paths = []
+    for img_i, img_data in enumerate(result_images):
+        fname = os.path.join(folder, f"{img_data.get('key', f'img_{img_i}')}.png")
+        try:
+            pil_img = Image.open(BytesIO(img_data['data']))
+            pil_img.save(fname, format="PNG")
+            paths.append(fname)
+        except Exception:
+            paths.append(None)
+    job_record['saved_image_paths'] = paths
+
+
+def submit_google_batch_jobs(queue, api_key):
+    """Upload JSONL and create a Google Batch job. Returns a job record dict."""
+    import tempfile
+    client = get_google_client(api_key)
+
+    # Build JSONL
+    requests_data = _build_batch_jsonl(queue)
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False, encoding='utf-8') as f:
+        for req in requests_data:
+            f.write(json.dumps(req) + '\n')
+        tmp_path = f.name
+
+    # Upload file to Files API (mime_type must be explicit — SDK can't infer .jsonl)
+    uploaded = client.files.upload(
+        file=tmp_path,
+        config=types.UploadFileConfig(
+            display_name='batch-image-gen-input',
+            mime_type='application/jsonl',
+        )
+    )
+    os.unlink(tmp_path)
+
+    # Determine model from first job in queue (all jobs in same batch must use same model)
+    model_id = queue[0]['model']
+
+    batch_job = client.batches.create(
+        model=model_id,
+        src=uploaded.name,
+        config={'display_name': f'image-batch-{datetime.now().strftime("%Y%m%d-%H%M%S")}'}
+    )
+
+    total_images = sum(j['num_images'] for j in queue)
+    total_cost = sum(j['cost'] for j in queue)
+
+    job_record = {
+        'job_name': batch_job.name,
+        'state': batch_job.state.name,
+        'submitted_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'total_images': total_images,
+        'total_cost': total_cost,
+        'model': model_id,
+        'requests': [
+            {
+                'prompt': j['prompt'],
+                'num_images': j['num_images'],
+                'model': j['model'],
+                'resolution': j['resolution'],
+                'resolution_display': j['resolution_display'],
+            }
+            for j in queue
+        ],
+        'result_images': [],
+        'saved_image_paths': [],
+    }
+
+    # Persist to disk immediately so the job survives app restarts
+    all_jobs = _batch_log_load()
+    all_jobs.insert(0, job_record)
+    _batch_log_save(all_jobs)
+
+    return job_record
+
+
+def refresh_google_batch_job(job_record, api_key):
+    """Poll the API and update the state of a job record in-place."""
+    client = get_google_client(api_key)
+    try:
+        batch_job = client.batches.get(name=job_record['job_name'])
+        job_record['state'] = batch_job.state.name
+        if batch_job.state.name == 'JOB_STATE_FAILED':
+            job_record['error'] = str(getattr(batch_job, 'error', ''))
+    except Exception as e:
+        job_record['state'] = 'ERROR'
+        job_record['error'] = str(e)
+    # Persist updated state
+    _batch_log_sync_one(job_record)
+    return job_record
+
+
+def fetch_google_batch_results(job_record, api_key):
+    """Download result file, extract image bytes, save to disk. Returns updated job_record."""
+    import base64 as _b64
+    client = get_google_client(api_key)
+    try:
+        batch_job = client.batches.get(name=job_record['job_name'])
+        if batch_job.state.name != 'JOB_STATE_SUCCEEDED':
+            return job_record
+
+        result_file_name = batch_job.dest.file_name
+        file_bytes = client.files.download(file=result_file_name)
+        content = file_bytes.decode('utf-8')
+
+        result_images = []
+        for line in content.splitlines():
+            if not line.strip():
+                continue
+            parsed = json.loads(line)
+            key = parsed.get('key', '')
+            candidates = parsed.get('response', {}).get('candidates', [])
+            for candidate in candidates:
+                parts = candidate.get('content', {}).get('parts', [])
+                for part in parts:
+                    inline = part.get('inlineData') or part.get('inline_data')
+                    if inline:
+                        img_data = _b64.b64decode(inline['data'])
+                        result_images.append({
+                            'key': key,
+                            'data': img_data,
+                            'mime_type': inline.get('mimeType', 'image/png'),
+                        })
+        job_record['result_images'] = result_images
+        job_record['state'] = 'JOB_STATE_SUCCEEDED'
+
+        # Save images to disk and persist paths in the log
+        _batch_save_images_to_disk(job_record)
+        _batch_log_sync_one(job_record)
+
+    except Exception as e:
+        job_record['fetch_error'] = str(e)
+        _batch_log_sync_one(job_record)
+    return job_record
+
+
+def _batch_log_sync_one(job_record):
+    """Update a single job record in the persisted log by job_name."""
+    all_jobs = _batch_log_load()
+    target = job_record.get('job_name')
+    updated = False
+    for i, j in enumerate(all_jobs):
+        if j.get('job_name') == target:
+            # Merge state/error/saved_image_paths without overwriting serialisable fields
+            j['state'] = job_record.get('state', j.get('state'))
+            if 'error' in job_record:
+                j['error'] = job_record['error']
+            if 'fetch_error' in job_record:
+                j['fetch_error'] = job_record['fetch_error']
+            j['saved_image_paths'] = job_record.get('saved_image_paths', j.get('saved_image_paths', []))
+            all_jobs[i] = j
+            updated = True
+            break
+    if not updated:
+        all_jobs.insert(0, job_record)
+    _batch_log_save(all_jobs)
+
+
 def show_google_generator_page():
     """Main function to show the Google AI Studio Image Generator page"""
 
@@ -442,6 +709,27 @@ def show_google_generator_page():
         json_prompts_data = load_prompts_from_json()
         st.session_state.google_json_prompts_data = json_prompts_data
         st.session_state.google_flattened_json_prompts = flatten_json_prompts(json_prompts_data)
+    if 'google_batch_queue' not in st.session_state:
+        st.session_state.google_batch_queue = []
+    if 'google_batch_jobs' not in st.session_state:
+        # Restore persisted jobs from disk; result_images are reloaded from saved_image_paths
+        persisted = _batch_log_load()
+        for jr in persisted:
+            jr.setdefault('result_images', [])
+            # Re-populate result_images from previously saved PNG files
+            if not jr['result_images'] and jr.get('saved_image_paths'):
+                for path in jr['saved_image_paths']:
+                    if path and os.path.exists(path):
+                        try:
+                            with open(path, 'rb') as f:
+                                jr['result_images'].append({
+                                    'key': os.path.splitext(os.path.basename(path))[0],
+                                    'data': f.read(),
+                                    'mime_type': 'image/png',
+                                })
+                        except Exception:
+                            pass
+        st.session_state.google_batch_jobs = persisted
 
     # Main UI
     st.title("🎨 Google AI Studio Image Generator")
@@ -902,7 +1190,13 @@ def show_google_generator_page():
 
                             with col_dl1:
                                 buf = BytesIO()
-                                generated_image.save(buf, format="PNG")
+                                dl_meta = PngImagePlugin.PngInfo()
+                                dl_meta.add_text("Prompt", prompt)
+                                dl_meta.add_text("Model", selected_model)
+                                dl_meta.add_text("Seed", str(seed if seed else ""))
+                                dl_meta.add_text("Aspect_Ratio", used_aspect_ratio)
+                                dl_meta.add_text("Provider", "Google AI Studio")
+                                generated_image.save(buf, format="PNG", pnginfo=dl_meta)
                                 st.download_button(
                                     label="📥 Download Generated",
                                     data=buf.getvalue(),
@@ -1112,6 +1406,397 @@ def show_google_generator_page():
                 )
             elif not qpg_generate:
                 st.info("👈 Enter text or upload an image, then click Generate")
+
+    # ─── Batch Generator Section ──────────────────────────────────────────────
+    st.divider()
+    st.subheader("🔄 Batch Image Generator")
+    st.markdown(
+        "Generate images in bulk via the **Google Batch API** — "
+        "up to **50% cheaper** than standard calls, async delivery within 24h."
+    )
+
+    # ── Job Builder ──
+    with st.expander("➕ Build Batch Queue", expanded=True):
+        bq_col1, bq_col2 = st.columns([2, 1])
+
+        with bq_col1:
+            batch_prompt_input = st.text_area(
+                "Image Prompt",
+                height=120,
+                placeholder="Describe the image(s) you want to generate...",
+                key="google_batch_prompt_input"
+            )
+
+            batch_ref_files = st.file_uploader(
+                "Reference Images (Optional)",
+                type=["png", "jpg", "jpeg", "webp", "bmp"],
+                accept_multiple_files=True,
+                help="Upload reference images to include in each request of this job",
+                key="google_batch_ref_upload"
+            )
+            batch_ref_images = []
+            if batch_ref_files:
+                ref_preview_cols = st.columns(min(len(batch_ref_files), 4))
+                for ri, rf in enumerate(batch_ref_files):
+                    img = Image.open(rf)
+                    img = ImageOps.exif_transpose(img).convert("RGB")
+                    batch_ref_images.append(img)
+                    with ref_preview_cols[ri % 4]:
+                        if not stealth_mode:
+                            st.image(img, caption=f"#{ri+1} {rf.name}", width=100)
+                        else:
+                            st.caption(f"Reference Image #{ri+1}")
+
+        with bq_col2:
+            batch_model_input = st.selectbox(
+                "Model",
+                options=BATCH_COMPATIBLE_MODELS,
+                index=0,
+                help="Only Gemini multimodal models support Batch image generation",
+                key="google_batch_model_input"
+            )
+
+            batch_res_display = st.selectbox(
+                "Resolution",
+                options=list(OUTPUT_RESOLUTIONS.keys()),
+                index=list(OUTPUT_RESOLUTIONS.keys()).index(DEFAULT_RESOLUTION),
+                key="google_batch_res_input"
+            )
+            batch_res_val = OUTPUT_RESOLUTIONS[batch_res_display]
+
+            batch_num_images = st.number_input(
+                "Number of Images",
+                min_value=1, max_value=500, value=1,
+                help="Each image becomes one request in the batch",
+                key="google_batch_num_images"
+            )
+
+            batch_use_auto_aspect = st.checkbox(
+                "Auto-detect aspect ratio",
+                value=True,
+                help="Uses the aspect ratio of the first reference image uploaded above",
+                key="google_batch_auto_aspect"
+            )
+
+            batch_aspect_display = st.selectbox(
+                "Aspect Ratio",
+                options=list(ASPECT_RATIOS.keys()),
+                index=0,
+                disabled=batch_use_auto_aspect,
+                key="google_batch_aspect_input"
+            )
+            if batch_use_auto_aspect and batch_ref_images:
+                batch_aspect_val = get_image_aspect_ratio(batch_ref_images[0])
+            else:
+                batch_aspect_val = ASPECT_RATIOS[batch_aspect_display]
+
+        # Cost / time preview
+        cost_per_img = BATCH_IMAGE_COSTS.get(batch_res_val, 0.034)
+        job_cost = cost_per_img * batch_num_images
+        st.info(
+            f"**Cost estimate:** ${job_cost:.4f}  "
+            f"({batch_num_images} image(s) × ${cost_per_img:.3f} @ {batch_res_display})  |  "
+            f"**Delivery:** up to 24 h  |  "
+            f"**Discount:** ~50% vs standard API"
+        )
+
+        if st.button("+ Add to Queue", type="secondary", use_container_width=False,
+                     key="google_batch_add_job_btn"):
+            if not batch_prompt_input.strip():
+                st.error("Please enter a prompt before adding to queue.")
+            else:
+                entry = {
+                    'id': len(st.session_state.google_batch_queue) + 1,
+                    'prompt': batch_prompt_input.strip(),
+                    'model': batch_model_input,
+                    'resolution': batch_res_val,
+                    'resolution_display': batch_res_display,
+                    'num_images': int(batch_num_images),
+                    'aspect_ratio': batch_aspect_val,
+                    'cost': job_cost,
+                    'ref_images': batch_ref_images,  # list of PIL images
+                }
+                st.session_state.google_batch_queue.append(entry)
+                ref_note = f" + {len(batch_ref_images)} ref image(s)" if batch_ref_images else ""
+                st.success(f"✅ Added job #{entry['id']} to queue ({batch_num_images} image(s){ref_note})")
+                st.rerun()
+
+    # ── Queue view ──
+    if st.session_state.google_batch_queue:
+        queue_total_images = sum(j['num_images'] for j in st.session_state.google_batch_queue)
+        queue_total_cost = sum(j['cost'] for j in st.session_state.google_batch_queue)
+
+        st.subheader(f"📋 Queue — {len(st.session_state.google_batch_queue)} job(s) | "
+                     f"{queue_total_images} images | Est. ${queue_total_cost:.4f}")
+
+        for idx, job in enumerate(st.session_state.google_batch_queue):
+            jc1, jc2, jc3 = st.columns([5, 2, 1])
+            with jc1:
+                n_refs = len(job.get('ref_images') or [])
+                ref_badge = f" | 🖼️ {n_refs} ref(s)" if n_refs else ""
+                st.write(
+                    f"**#{job['id']}** `{job['model']}` — "
+                    f"{job['num_images']}x @ {job['resolution_display']} ({job['aspect_ratio']}){ref_badge}"
+                )
+                st.caption(f"> {job['prompt'][:120]}{'...' if len(job['prompt'])>120 else ''}")
+            with jc2:
+                st.caption(f"Est. cost: **${job['cost']:.4f}**")
+            with jc3:
+                if st.button("🗑️", key=f"google_batch_rm_{idx}_{job['id']}",
+                             help="Remove from queue"):
+                    st.session_state.google_batch_queue.pop(idx)
+                    st.rerun()
+
+        st.divider()
+        bsub_col, bclr_col = st.columns([3, 1])
+
+        with bclr_col:
+            if st.button("🗑️ Clear Queue", use_container_width=True,
+                         key="google_batch_clear_queue_btn"):
+                st.session_state.google_batch_queue = []
+                st.rerun()
+
+        with bsub_col:
+            # Warn if multiple models are mixed — batch API requires single model per job
+            models_in_queue = list({j['model'] for j in st.session_state.google_batch_queue})
+            if len(models_in_queue) > 1:
+                st.warning(
+                    f"⚠️ Queue contains multiple models ({', '.join(models_in_queue)}). "
+                    "The Batch API requires a single model per job. "
+                    "Only the first model will be used."
+                )
+
+            submit_disabled = not st.session_state.google_api_key
+            if st.button(
+                f"🚀 Submit Batch Job ({queue_total_images} images, est. ${queue_total_cost:.4f})",
+                type="primary", use_container_width=True,
+                disabled=submit_disabled,
+                key="google_batch_submit_btn"
+            ):
+                if not st.session_state.google_api_key:
+                    st.error("❌ Please enter your Google AI API key in the sidebar first.")
+                else:
+                    with st.spinner("Uploading requests and creating batch job..."):
+                        try:
+                            job_record = submit_google_batch_jobs(
+                                st.session_state.google_batch_queue,
+                                st.session_state.google_api_key
+                            )
+                            st.session_state.google_batch_jobs.insert(0, job_record)
+                            st.session_state.google_batch_queue = []
+                            st.success(
+                                f"✅ Batch job created: `{job_record['job_name']}`  |  "
+                                f"State: `{job_record['state']}`"
+                            )
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Failed to submit batch job: {e}")
+                            st.exception(e)
+
+    # ── Jobs monitor ──
+    st.divider()
+    st.subheader("📊 Batch Jobs Monitor")
+
+    # ── Retention notice ──────────────────────────────────────────────────────
+    st.info(
+        "⚠️ **Result file retention:** Google's Files API retains output files for ~**48 hours** "
+        "after a batch job completes (same TTL as the Files API). "
+        "Jobs themselves expire after **48 hours** if still pending/running. "
+        "Download your images as soon as the job succeeds — "
+        "after ~48 h the result file will be deleted by Google automatically.\n\n"
+        "Jobs are logged locally in `batch_jobs_log.json` and restored on app restart, "
+        "but raw image bytes are only available while the result file still exists on Google's servers."
+    )
+
+    mon_c1, mon_c2, mon_c3, mon_c4 = st.columns([1, 1, 1, 1])
+    with mon_c1:
+        if st.button("🔄 Refresh All", use_container_width=True,
+                     key="google_batch_refresh_all"):
+            if st.session_state.google_api_key:
+                with st.spinner("Refreshing job statuses..."):
+                    for jr in st.session_state.google_batch_jobs:
+                        refresh_google_batch_job(jr, st.session_state.google_api_key)
+                st.rerun()
+            else:
+                st.error("❌ API key required.")
+
+    with mon_c2:
+        if st.button("☁️ Import from Google", use_container_width=True,
+                     key="google_batch_import_from_api",
+                     help="Fetch recent batch jobs directly from Google API and merge into the log"):
+            if not st.session_state.google_api_key:
+                st.error("❌ API key required.")
+            else:
+                with st.spinner("Fetching batch jobs from Google API..."):
+                    try:
+                        _client = get_google_client(st.session_state.google_api_key)
+                        remote_batches = _client.batches.list(config={'page_size': 100})
+                        known_names = {jr['job_name'] for jr in st.session_state.google_batch_jobs}
+                        imported = 0
+                        for b in remote_batches.page:
+                            if b.name not in known_names:
+                                new_jr = {
+                                    'job_name': b.name,
+                                    'state': b.state.name,
+                                    'submitted_at': b.create_time.strftime("%Y-%m-%d %H:%M:%S")
+                                        if hasattr(b, 'create_time') and b.create_time else 'unknown',
+                                    'total_images': 0,
+                                    'total_cost': 0.0,
+                                    'model': getattr(b, 'model', 'unknown'),
+                                    'requests': [],
+                                    'result_images': [],
+                                    'saved_image_paths': [],
+                                    'imported': True,
+                                }
+                                st.session_state.google_batch_jobs.insert(0, new_jr)
+                                known_names.add(b.name)
+                                imported += 1
+                        # Persist merged list
+                        _batch_log_save(st.session_state.google_batch_jobs)
+                        st.success(f"✅ Imported {imported} new job(s) from Google API.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Failed to import: {e}")
+
+    with mon_c3:
+        if st.button("🗑️ Clear Completed", use_container_width=True,
+                     key="google_batch_clear_done"):
+            done_states = {'JOB_STATE_SUCCEEDED', 'JOB_STATE_FAILED', 'JOB_STATE_CANCELLED'}
+            st.session_state.google_batch_jobs = [
+                jr for jr in st.session_state.google_batch_jobs
+                if jr.get('state') not in done_states
+            ]
+            _batch_log_save(st.session_state.google_batch_jobs)
+            st.rerun()
+
+    with mon_c4:
+        if st.button("🗑️ Clear All", use_container_width=True,
+                     key="google_batch_clear_all_jobs"):
+            st.session_state.google_batch_jobs = []
+            _batch_log_save([])
+            st.rerun()
+
+    if not st.session_state.google_batch_jobs:
+        st.info("No batch jobs yet. Submit a batch above.")
+    else:
+
+        for job_idx, job_record in enumerate(st.session_state.google_batch_jobs):
+            state = job_record.get('state', 'UNKNOWN')
+            state_icon = {
+                'JOB_STATE_SUCCEEDED': '✅',
+                'JOB_STATE_FAILED': '❌',
+                'JOB_STATE_CANCELLED': '⚠️',
+                'JOB_STATE_RUNNING': '▶️',
+                'JOB_STATE_PENDING': '⏳',
+                'ERROR': '🔥',
+            }.get(state, '⏳')
+
+            expander_label = (
+                f"{state_icon} {job_record['submitted_at']}  |  "
+                f"{job_record['total_images']} image(s)  |  "
+                f"Model: {job_record['model']}  |  "
+                f"State: {state}"
+            )
+            with st.expander(expander_label, expanded=(state == 'JOB_STATE_SUCCEEDED')):
+                info_c1, info_c2 = st.columns([2, 1])
+                with info_c1:
+                    st.write(f"**Job name:** `{job_record.get('job_name', 'N/A')}`")
+                    if job_record.get('imported'):
+                        st.caption("☁️ Recovered from Google API")
+                    saved_paths = [p for p in job_record.get('saved_image_paths', []) if p]
+                    if saved_paths:
+                        st.caption(f"💾 {len(saved_paths)} image(s) saved locally in `outputs/batch/`")
+                    if job_record.get('error'):
+                        st.error(f"Error: {job_record['error']}")
+                    if job_record.get('fetch_error'):
+                        st.warning(f"Fetch error: {job_record['fetch_error']}")
+                with info_c2:
+                    st.metric("Images", job_record['total_images'])
+                    st.metric("Est. cost", f"${job_record['total_cost']:.4f}")
+
+                st.write("**Requests:**")
+                for req in job_record.get('requests', []):
+                    st.caption(
+                        f"• {req['num_images']}× `{req['model']}` "
+                        f"@ {req['resolution_display']} — "
+                        f"{req['prompt'][:80]}{'...' if len(req['prompt'])>80 else ''}"
+                    )
+
+                jr_col1, jr_col2, jr_col3 = st.columns([1, 1, 2])
+
+                with jr_col1:
+                    if st.button("🔄 Refresh", key=f"google_batch_refresh_{job_idx}",
+                                 use_container_width=True):
+                        if st.session_state.google_api_key:
+                            refresh_google_batch_job(job_record, st.session_state.google_api_key)
+                            st.rerun()
+
+                with jr_col2:
+                    if state == 'JOB_STATE_SUCCEEDED' and not job_record.get('result_images'):
+                        if st.button("📥 Fetch Images", key=f"google_batch_fetch_{job_idx}",
+                                     use_container_width=True, type="primary"):
+                            with st.spinner("Downloading results..."):
+                                fetch_google_batch_results(job_record, st.session_state.google_api_key)
+                            st.rerun()
+
+                # Display fetched images
+                result_images = job_record.get('result_images', [])
+                if result_images:
+                    st.write(f"**Generated Images ({len(result_images)}):**")
+                    img_per_row = 4
+                    img_cols = st.columns(img_per_row)
+                    for img_i, img_data in enumerate(result_images):
+                        with img_cols[img_i % img_per_row]:
+                            try:
+                                pil_img = Image.open(BytesIO(img_data['data']))
+                                st.image(pil_img, use_container_width=True,
+                                         caption=f"#{img_i+1} {img_data.get('key','')}")
+                                fname = (
+                                    f"batch_{job_record['submitted_at'][:10]}_"
+                                    f"{img_data.get('key','img')}_{img_i}.png"
+                                ).replace(" ", "_").replace(":", "-")
+                                # Convert to PNG bytes for download
+                                dl_buf = BytesIO()
+                                pil_img.save(dl_buf, format="PNG")
+                                st.download_button(
+                                    "📥",
+                                    data=dl_buf.getvalue(),
+                                    file_name=fname,
+                                    mime="image/png",
+                                    key=f"google_batch_dl_{job_idx}_{img_i}",
+                                    use_container_width=True
+                                )
+                            except Exception:
+                                st.warning(f"Could not render image #{img_i+1}")
+
+                    # Bulk download as zip
+                    if len(result_images) > 1:
+                        import zipfile, io as _io
+                        zip_buf = _io.BytesIO()
+                        with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+                            for img_i, img_data in enumerate(result_images):
+                                try:
+                                    pil_img = Image.open(BytesIO(img_data['data']))
+                                    png_buf = BytesIO()
+                                    pil_img.save(png_buf, format="PNG")
+                                    zf.writestr(
+                                        f"batch_{img_data.get('key','img')}_{img_i}.png",
+                                        png_buf.getvalue()
+                                    )
+                                except Exception:
+                                    pass
+                        zip_buf.seek(0)
+                        zip_name = (
+                            f"batch_{job_record['submitted_at'][:10]}_all.zip"
+                        ).replace(" ", "_").replace(":", "-")
+                        st.download_button(
+                            f"📦 Download all {len(result_images)} images as ZIP",
+                            data=zip_buf.getvalue(),
+                            file_name=zip_name,
+                            mime="application/zip",
+                            key=f"google_batch_dl_zip_{job_idx}",
+                            use_container_width=True
+                        )
 
     # Prompt History Section
     if st.session_state.google_prompt_history:

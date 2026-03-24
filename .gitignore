@@ -7,7 +7,7 @@ outputs/*
 wavespeedai/outputs/*
 bkps/*
 test/*
-
+audio/*
 api_keys*
 
 *.wav
