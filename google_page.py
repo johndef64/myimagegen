@@ -69,12 +69,14 @@ OUTPUT_RESOLUTIONS = {
 }
 DEFAULT_RESOLUTION = "1K (1024px)"
 
+SAFETY_ACTION = "BLOCK_NONE"
+SAFETY_ACTION = "OFF"
 SAFETY_SETTINGS = [
-    types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
-    types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
-    types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
-    types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
-    types.SafetySetting(category="HARM_CATEGORY_CIVIC_INTEGRITY", threshold="BLOCK_NONE"),
+    types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold=SAFETY_ACTION),
+    types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold=SAFETY_ACTION),
+    types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold=SAFETY_ACTION),
+    types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold=SAFETY_ACTION),
+    types.SafetySetting(category="HARM_CATEGORY_CIVIC_INTEGRITY", threshold=SAFETY_ACTION),
 ]
 
 # Helper functions
@@ -474,6 +476,7 @@ def _build_batch_jsonl(queue):
                     "contents": [{"parts": parts}],
                     "generation_config": {
                         "response_modalities": ["TEXT", "IMAGE"],
+                        "safety_settings":SAFETY_SETTINGS,
                         "image_config": {
                             "aspect_ratio": job['aspect_ratio'],
                             "image_size": job['resolution'],
@@ -483,6 +486,7 @@ def _build_batch_jsonl(queue):
             })
             req_idx += 1
     return requests_data
+
 
 
 BATCH_LOG_FILE = "batch_jobs_log.json"
