@@ -476,7 +476,7 @@ def _build_batch_jsonl(queue):
                     "contents": [{"parts": parts}],
                     "generation_config": {
                         "response_modalities": ["TEXT", "IMAGE"],
-                        "safety_settings":SAFETY_SETTINGS,
+                        # "safety_settings":SAFETY_SETTINGS,
                         "image_config": {
                             "aspect_ratio": job['aspect_ratio'],
                             "image_size": job['resolution'],
@@ -1747,13 +1747,13 @@ def show_google_generator_page():
                     st.metric("Images", job_record['total_images'])
                     st.metric("Est. cost", f"${job_record['total_cost']:.4f}")
 
-                st.write("**Requests:**")
-                for req in job_record.get('requests', []):
-                    st.caption(
-                        f"• {req['num_images']}× `{req['model']}` "
-                        f"@ {req['resolution_display']} — "
-                        f"{req['prompt'][:80]}{'...' if len(req['prompt'])>80 else ''}"
-                    )
+                # st.write("**Requests:**")
+                # for req in job_record.get('requests', []):
+                #     st.caption(
+                #         f"• {req['num_images']}× `{req['model']}` "
+                #         f"@ {req['resolution_display']} — "
+                #         f"{req['prompt'][:80]}{'...' if len(req['prompt'])>80 else ''}"
+                #     )
 
                 jr_col1, jr_col2, jr_col3 = st.columns([1, 1, 2])
 
