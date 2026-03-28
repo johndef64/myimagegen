@@ -607,7 +607,7 @@ def show_modelslab_generator_page():
         if not available_models:
             st.error("No models available for this mode. Please update MODEL_CONFIGS.")
             st.stop()
-        default_model = DEFAULT_MODEL_BY_MODE.get(generation_mode, available_models[0])
+        default_model = DEFAULT_MODEL_BY_MODE.get(generation_mode, available_models[1])
         if default_model not in available_models:
             default_model = available_models[0]
         

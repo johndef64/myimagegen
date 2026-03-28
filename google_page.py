@@ -343,7 +343,8 @@ def _generate_imagen(client, model_id, prompt, aspect_ratio, seed, output_resolu
 
 
 def save_image_with_metadata(image, prompt, model_name, seed, aspect_ratio,
-                             output_folder="outputs", reduce_quality=False):
+                             output_folder="outputs", reduce_quality=False,
+                             reference_filenames=None):
     """Save image with metadata to outputs folder"""
     metadata = PngImagePlugin.PngInfo()
     metadata.add_text("Prompt", prompt)
@@ -351,6 +352,8 @@ def save_image_with_metadata(image, prompt, model_name, seed, aspect_ratio,
     metadata.add_text("Seed", str(seed))
     metadata.add_text("Aspect_Ratio", aspect_ratio)
     metadata.add_text("Provider", "Google AI Studio")
+    if reference_filenames:
+        metadata.add_text("Reference_Images", ", ".join(reference_filenames))
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     prompt_short = prompt[:30].replace(" ", "_").replace("\n", "_")
@@ -540,13 +543,15 @@ def _batch_save_images_to_disk(job_record):
     folder = os.path.join("outputs", "batch", safe_ts)
     os.makedirs(folder, exist_ok=True)
 
-    # Build a key→prompt lookup from the requests list so we can embed prompt in metadata
+    # Build key→prompt and key→ref_image_names lookups from the requests list
     # Each request entry covers num_images images; expand into per-key mapping
     key_to_prompt = {}
+    key_to_ref_names = {}
     req_idx = 1
     for req in job_record.get('requests', []):
         for _ in range(req.get('num_images', 1)):
             key_to_prompt[f"img_{req_idx}"] = req.get('prompt', '')
+            key_to_ref_names[f"img_{req_idx}"] = req.get('ref_image_names', [])
             req_idx += 1
 
     paths = []
@@ -570,6 +575,9 @@ def _batch_save_images_to_disk(job_record):
             metadata.add_text("Key", key)
             metadata.add_text("SubmittedAt", job_record.get('submitted_at', ''))
             metadata.add_text("Provider", "Google AI Studio Batch API")
+            ref_names = key_to_ref_names.get(key, [])
+            if ref_names:
+                metadata.add_text("Reference_Images", ", ".join(ref_names))
             pil_img.save(fname, format="PNG", pnginfo=metadata)
             paths.append(fname)
         except Exception:
@@ -627,6 +635,7 @@ def submit_google_batch_jobs(queue, api_key):
                 'model': j['model'],
                 'resolution': j['resolution'],
                 'resolution_display': j['resolution_display'],
+                'ref_image_names': j.get('ref_image_names', []),
             }
             for j in queue
         ],
@@ -1111,6 +1120,7 @@ def show_google_generator_page():
             st.info("Imagen models don't support reference images (text-to-image only)")
             uploaded_files = None
             reference_images = None
+            reference_image_names = []
         else:
             uploaded_files = st.file_uploader(
                 "Upload reference images",
@@ -1129,12 +1139,14 @@ def show_google_generator_page():
             # )
             ref_cols = st.columns(min(len(uploaded_files), 3))
             reference_images = []
+            reference_image_names = []
 
             for idx, uploaded_file in enumerate(uploaded_files):
                 img = Image.open(uploaded_file)
                 img = ImageOps.exif_transpose(img)
                 img = img.convert("RGB")
                 reference_images.append(img)
+                reference_image_names.append(uploaded_file.name)
 
                 with ref_cols[idx % 3]:
                     if not stealth_mode:
@@ -1142,6 +1154,7 @@ def show_google_generator_page():
                     st.caption(f"Request position: **{idx+1}** | {img.size[0]}x{img.size[1]}")
         elif not uploaded_files:
             reference_images = None
+            reference_image_names = []
 
 
 
@@ -1202,7 +1215,8 @@ def show_google_generator_page():
                                     generated_image, prompt,
                                     selected_model,
                                     seed if seed else random.randint(1, 1000000),
-                                    used_aspect_ratio
+                                    used_aspect_ratio,
+                                    reference_filenames=reference_image_names if reference_image_names else None
                                 )
                                 st.success(f"💾 Saved to: `{saved_path}`")
 
@@ -1273,6 +1287,7 @@ def show_google_generator_page():
                                 'seed': seed,
                                 'aspect_ratio': used_aspect_ratio,
                                 'reference_images': reference_images,
+                                'reference_image_names': reference_image_names if reference_image_names else [],
                                 'response_text': response_text,
                                 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             })
@@ -1468,12 +1483,14 @@ def show_google_generator_page():
                 key="google_batch_ref_upload"
             )
             batch_ref_images = []
+            batch_ref_image_names = []
             if batch_ref_files:
                 ref_preview_cols = st.columns(min(len(batch_ref_files), 4))
                 for ri, rf in enumerate(batch_ref_files):
                     img = Image.open(rf)
                     img = ImageOps.exif_transpose(img).convert("RGB")
                     batch_ref_images.append(img)
+                    batch_ref_image_names.append(rf.name)
                     with ref_preview_cols[ri % 4]:
                         if not stealth_mode:
                             st.image(img, caption=f"#{ri+1} {rf.name}", width=100)
@@ -1523,7 +1540,33 @@ def show_google_generator_page():
             else:
                 batch_aspect_val = ASPECT_RATIOS[batch_aspect_display]
 
-        # Cost / time preview
+            # Cost / time preview
+            cost_per_img = BATCH_IMAGE_COSTS.get(batch_res_val, 0.034)
+            job_cost = cost_per_img * batch_num_images
+
+            if st.button("+ Add to Queue", type="secondary", use_container_width=False,
+                        key="google_batch_add_job_btn"):
+                if not batch_prompt_input.strip():
+                    st.error("Please enter a prompt before adding to queue.")
+                else:
+                    entry = {
+                        'id': len(st.session_state.google_batch_queue) + 1,
+                        'prompt': batch_prompt_input.strip(),
+                        'model': batch_model_input,
+                        'resolution': batch_res_val,
+                        'resolution_display': batch_res_display,
+                        'num_images': int(batch_num_images),
+                        'aspect_ratio': batch_aspect_val,
+                        'cost': job_cost,
+                        'ref_images': batch_ref_images,  # list of PIL images
+                        'ref_image_names': batch_ref_image_names,  # list of filenames
+                    }
+                    st.session_state.google_batch_queue.append(entry)
+                    ref_note = f" + {len(batch_ref_images)} ref image(s)" if batch_ref_images else ""
+                    st.success(f"✅ Added job #{entry['id']} to queue ({batch_num_images} image(s){ref_note})")
+                    st.rerun()
+
+
         cost_per_img = BATCH_IMAGE_COSTS.get(batch_res_val, 0.034)
         job_cost = cost_per_img * batch_num_images
         st.info(
@@ -1533,26 +1576,7 @@ def show_google_generator_page():
             f"**Discount:** ~50% vs standard API"
         )
 
-        if st.button("+ Add to Queue", type="secondary", use_container_width=False,
-                     key="google_batch_add_job_btn"):
-            if not batch_prompt_input.strip():
-                st.error("Please enter a prompt before adding to queue.")
-            else:
-                entry = {
-                    'id': len(st.session_state.google_batch_queue) + 1,
-                    'prompt': batch_prompt_input.strip(),
-                    'model': batch_model_input,
-                    'resolution': batch_res_val,
-                    'resolution_display': batch_res_display,
-                    'num_images': int(batch_num_images),
-                    'aspect_ratio': batch_aspect_val,
-                    'cost': job_cost,
-                    'ref_images': batch_ref_images,  # list of PIL images
-                }
-                st.session_state.google_batch_queue.append(entry)
-                ref_note = f" + {len(batch_ref_images)} ref image(s)" if batch_ref_images else ""
-                st.success(f"✅ Added job #{entry['id']} to queue ({batch_num_images} image(s){ref_note})")
-                st.rerun()
+
 
     # ── Queue view ──
     if st.session_state.google_batch_queue:
@@ -1946,6 +1970,9 @@ def show_google_generator_page():
                         metadata.add_text("Seed", str(item.get('seed', 'N/A')))
                         metadata.add_text("Timestamp", item['timestamp'])
                         metadata.add_text("Provider", "Google AI Studio")
+                        ref_names = item.get('reference_image_names', [])
+                        if ref_names:
+                            metadata.add_text("Reference_Images", ", ".join(ref_names))
                         item['image'].save(buf, format="PNG", pnginfo=metadata)
                         st.download_button(
                             label="📥 Download Image",
