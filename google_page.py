@@ -560,10 +560,10 @@ def _batch_save_images_to_disk(job_record):
         prompt = key_to_prompt.get(key, '')
         prompt_slug = prompt[:40].replace(' ', '_').replace('\n', '_')
         prompt_slug = ''.join(c for c in prompt_slug if c.isalnum() or c in ('_', '-'))
-
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         fname = os.path.join(
             folder,
-            f"{key}_{model_short}_{prompt_slug}.png" if prompt_slug else f"{key}_{model_short}.png"
+            f"{key}_{model_short}_{prompt_slug}_{timestamp}.png" if prompt_slug else f"{key}_{model_short}_{timestamp}.png"
         )
 
         try:
@@ -739,6 +739,8 @@ def show_google_generator_page():
     # Initialize session state
     if 'google_generated_images' not in st.session_state:
         st.session_state.google_generated_images = []
+    if 'google_current_image' not in st.session_state:
+        st.session_state.google_current_image = None
     if 'google_prompt_history' not in st.session_state:
         st.session_state.google_prompt_history = []
     if 'google_api_key' not in st.session_state:
@@ -1190,10 +1192,8 @@ def show_google_generator_page():
                         )
 
                         if generated_image:
+                            st.session_state.google_current_image = generated_image
                             st.success("✅ Image generated successfully!")
-
-                            if not stealth_mode:
-                                st.image(generated_image, use_container_width=True)
 
                             # Show response text if any
                             if response_text:
@@ -1301,6 +1301,10 @@ def show_google_generator_page():
                     except Exception as e:
                         st.error(f"❌ Error: {str(e)}")
                         st.exception(e)
+
+        # Always show the latest generated image (persists across re-renders)
+        if st.session_state.google_current_image is not None and not stealth_mode:
+            st.image(st.session_state.google_current_image, use_container_width=True)
 
     # Dataset browser (imported from database_module.py)
     from database_module import render_dataset_browser

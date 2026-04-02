@@ -73,6 +73,7 @@ DEFAULT_MODEL_BY_MODE = {
     "Text to Image": "flux-2-dev",
     "Image to Image": "flux-2-dev",
     "Qwen Edit": "qwen-edit",
+    "V7 img2img": "wan-2.7-i2i",
 }
 
 def is_qwen_edit_model(model_id: Optional[str]) -> bool:
@@ -98,6 +99,9 @@ def get_models_for_mode(mode: str) -> List[str]:
             models.append(model_id)
         elif mode == "Qwen Edit":
             if endpoint_img == Endpoint.QWEN_EDIT:
+                models.append(model_id)
+        elif mode == "V7 img2img":
+            if endpoint_img == Endpoint.IMG2IMG_V7:
                 models.append(model_id)
     return sorted(models)
 
@@ -384,9 +388,23 @@ def create_comparison_image(generated_image: Image.Image, reference_images: List
     
     from PIL import ImageDraw, ImageFont
     
-    ref_images = reference_images[:max_refs]
+    # Resolve any URL strings to PIL Images
+    resolved = []
+    for r in reference_images[:max_refs]:
+        if isinstance(r, str):
+            try:
+                _resp = http_requests.get(r, timeout=10)
+                resolved.append(Image.open(BytesIO(_resp.content)).convert("RGB"))
+            except Exception:
+                pass
+        else:
+            resolved.append(r)
+    ref_images = resolved
+    if not ref_images:
+        return None
+
     gen_width, gen_height = generated_image.size
-    
+
     resized_refs = []
     total_ref_width = 0
     for ref_img in ref_images:
@@ -593,7 +611,7 @@ def show_modelslab_generator_page():
         st.subheader("Generation Mode")
         generation_mode = st.radio(
             "Mode",
-            ["Text to Image", "Image to Image", "Qwen Edit"],
+            ["Text to Image", "Image to Image", "Qwen Edit", "V7 img2img"],
             horizontal=True,
             help="Choose generation mode"
         )
@@ -1013,35 +1031,89 @@ def show_modelslab_generator_page():
 
         # Reference images upload (for img2img modes)
         reference_images = None
+        v7_url_images = None  # Only used in V7 img2img URL mode
         if generation_mode != "Text to Image":
             st.subheader("Reference Images")
-            uploaded_files = st.file_uploader(
-                "Upload reference images",
-                type=["png", "jpg", "jpeg", "webp", "bmp"],
-                accept_multiple_files=True,
-                help="Upload one or more reference images"
-            )
-            
-            if uploaded_files:
-                max_refs = 4 if generation_mode == "Qwen Edit" else len(uploaded_files)
-                if generation_mode == "Qwen Edit" and len(uploaded_files) > max_refs:
-                    st.info("Qwen Edit supports up to 4 reference images. Using the first 4 files.")
-                used_files = uploaded_files[:max_refs]
-                st.write(f"**{len(used_files)} image(s) will be used**")
-                num_cols = max(1, min(len(used_files), 3))
-                ref_cols = st.columns(num_cols)
-                reference_images = []
-                
-                for idx, uploaded_file in enumerate(used_files):
-                    img = Image.open(uploaded_file)
-                    img = ImageOps.exif_transpose(img)
-                    img = img.convert("RGB")
-                    reference_images.append(img)
-                    
-                    with ref_cols[idx % num_cols]:
+
+            # V7 img2img: offer both file upload and URL input
+            if generation_mode == "V7 img2img":
+                v7_input_mode = st.radio(
+                    "Image input mode",
+                    ["Upload file", "Paste URL"],
+                    horizontal=True,
+                    help="V7 API requires URLs — use imgBB upload or paste a public URL"
+                )
+            else:
+                v7_input_mode = "Upload file"
+
+            if v7_input_mode == "Paste URL":
+                v7_url_input = st.text_area(
+                    "Image URL(s) — one per line",
+                    placeholder="https://example.com/image.png",
+                )
+                if v7_url_input and v7_url_input.strip():
+                    v7_url_images = [u.strip() for u in v7_url_input.strip().splitlines() if u.strip()]
+                    reference_images = v7_url_images  # truthy check for can_generate
+                    for url in v7_url_images:
                         if not stealth_mode:
-                            st.image(img, caption=f"Ref {idx+1}", width=150)
-                        st.caption(f"Size: {img.size[0]}×{img.size[1]}")
+                            st.image(url, width=150)
+            else:
+                uploaded_files = st.file_uploader(
+                    "Upload reference images",
+                    type=["png", "jpg", "jpeg", "webp", "bmp"],
+                    accept_multiple_files=True,
+                    help="Upload one or more reference images"
+                )
+
+                if not uploaded_files:
+                    # Clear cached imgBB URLs if user removed all files
+                    st.session_state.pop("imgbb_urls", None)
+
+                if uploaded_files:
+                    max_refs = 4 if generation_mode == "Qwen Edit" else len(uploaded_files)
+                    if generation_mode == "Qwen Edit" and len(uploaded_files) > max_refs:
+                        st.info("Qwen Edit supports up to 4 reference images. Using the first 4 files.")
+                    used_files = uploaded_files[:max_refs]
+                    st.write(f"**{len(used_files)} image(s) will be used**")
+                    num_cols = max(1, min(len(used_files), 3))
+                    ref_cols = st.columns(num_cols)
+                    reference_images = []
+
+                    for idx, uploaded_file in enumerate(used_files):
+                        img = Image.open(uploaded_file)
+                        img = ImageOps.exif_transpose(img)
+                        img = img.convert("RGB")
+                        reference_images.append(img)
+
+                        with ref_cols[idx % num_cols]:
+                            if not stealth_mode:
+                                st.image(img, caption=f"Ref {idx+1}", width=150)
+                            st.caption(f"Size: {img.size[0]}×{img.size[1]}")
+
+                    # V7: auto-upload to imgBB as soon as files are loaded
+                    if generation_mode == "V7 img2img" and reference_images:
+                        # Use file names as cache key to avoid re-uploading same files
+                        current_file_key = tuple(f.name for f in used_files)
+                        if st.session_state.get("imgbb_file_key") != current_file_key:
+                            try:
+                                import sys as _sys
+                                _sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
+                                from imgbb_upload import upload_base64_to_imgbb
+                                uploaded_urls = []
+                                for idx, pil_img in enumerate(reference_images):
+                                    buf = BytesIO()
+                                    pil_img.save(buf, format="PNG")
+                                    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                                    info = upload_base64_to_imgbb(b64, name=f"ref_{idx}", expiration=120)
+                                    uploaded_urls.append(info["display_url"])
+                                st.session_state.imgbb_urls = uploaded_urls
+                                st.session_state.imgbb_file_key = current_file_key
+                            except Exception as e:
+                                st.warning(f"imgBB upload failed: {e}")
+                        if st.session_state.get("imgbb_urls"):
+                            v7_url_images = st.session_state.imgbb_urls
+                            reference_images = v7_url_images
+                            st.info(f"Images uploaded to imgBB — temporary URLs active (expire in ~120s)")
         
 
 
@@ -1133,18 +1205,26 @@ def show_modelslab_generator_page():
                     try:
                         # Determine actual aspect ratio
                         if use_auto_aspect and reference_images:
-                            actual_aspect_ratio = get_image_aspect_ratio(reference_images[0])
+                            first_ref = reference_images[0]
+                            if isinstance(first_ref, str):
+                                # URL: download to get dimensions
+                                _r = http_requests.get(first_ref, timeout=10)
+                                first_ref = Image.open(BytesIO(_r.content)).convert("RGB")
+                            actual_aspect_ratio = get_image_aspect_ratio(first_ref)
                         else:
                             actual_aspect_ratio = aspect_ratio
                         
                         # Prepare images for API
                         image_data = None
-                        if reference_images:
+                        if v7_url_images:
+                            # V7 URL mode: pass URLs directly (no base64)
+                            image_data = v7_url_images
+                        elif reference_images:
                             # Resize and encode to base64
                             resized_imgs = [resize_image_for_upload(img, max_image_size) for img in reference_images]
                             image_data = [encode_pil_to_base64(img) for img in resized_imgs]
-                        
-                        images_payload = image_data if reference_images else None
+
+                        images_payload = image_data if image_data else None
 
                         generation_kwargs: Dict[str, Any] = {
                             "aspect_ratio": actual_aspect_ratio,
@@ -1171,11 +1251,13 @@ def show_modelslab_generator_page():
                                 "lora_strength": lora_strength if use_lora else None,
                             })
       
-                        else:  # Qwen Edit
+                        elif generation_mode == "Qwen Edit":
                             generation_kwargs.update({
                                 "resize_mp": resize_mp,
                                 "num_inference_steps": num_inference_steps,
                             })
+                        else:  # V7 img2img
+                            pass  # V7 uses only aspect_ratio and seed (already in generation_kwargs)
 
                         if selected_model == "flux-2-dev":
                             print(f"Using flux-2-dev specific parameters: strength = {strength}")

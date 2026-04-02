@@ -142,7 +142,8 @@ V6_MODELS = [
 # V7 models (use different endpoints)
 V7_MODELS = [
     "grok-imagine-image-t2i", "grok-imagine-image-i2i",
-    "seedream-4.0-i2i", "gen4_image_turbo", "flux-2-pro", "nano-banana"
+    "seedream-4.0-i2i", "gen4_image_turbo", "flux-2-pro", "nano-banana",
+    "wan-2.7-i2i", "wan-2.7-t2i"
 ]
 
 # Qwen edit models 
@@ -304,6 +305,21 @@ MODEL_CONFIGS = {
         "endpoint_img2img": Endpoint.IMG2IMG_V7,
         "supports_txt2img": False,
         "supports_img2img": True,
+        "init_image_as_list": True,
+    },
+    # === WAN 2.7 Models ===
+    "wan-2.7-i2i": {
+        "api_version": "v7",
+        "endpoint_img2img": Endpoint.IMG2IMG_V7,
+        "supports_txt2img": False,
+        "supports_img2img": True,
+        "init_image_as_list": True,
+    },
+    "wan-2.7-t2i": {
+        "api_version": "v7",
+        "endpoint_txt2img": Endpoint.TXT2IMG_V7,
+        "supports_txt2img": True,
+        "supports_img2img": False,
         "init_image_as_list": True,
     },
 }
@@ -870,14 +886,21 @@ class PayloadBuilder:
         """
         # For v7, init_image can be a list
         init_image = images if len(images) > 1 else images[0] if images else None
-        
+
+        # Detect if any image is base64 (not a URL)
+        has_base64 = any(not is_url(img) for img in images) if images else False
+
         # Minimum required payload
         payload = {
             "key": self.api_key,
             "prompt": prompt,
             "model_id": model_id,
             "init_image": init_image,
+            "safety_checker": "no",
         }
+
+        if has_base64:
+            payload["base64"] = "yes"
         
         # Add optional parameters
         if aspect_ratio:
@@ -1147,7 +1170,10 @@ class ModelsLabAPI:
 
         
         response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
+        if not response.ok:
+            print(f"[ModelsLabAPI] HTTP {response.status_code} error body: {response.text}")
+            response.reason = f"{response.reason} | {response.text}"
+            response.raise_for_status()
         
         result = APIResponse.from_dict(response.json())
         
@@ -1483,31 +1509,32 @@ class ModelsLabAPI:
         
         Args:
             prompt: Transformation instructions
-            images: Input image URLs (v7 requires URLs) - can be single or list
-            model_id: Model to use (seedream, gen4, flux-2-pro, etc.)
+            images: Input images — URLs or base64 strings — can be single or list
+            model_id: Model to use (seedream, gen4, flux-2-pro, wan-2.7-i2i, etc.)
             aspect_ratio: Output aspect ratio (e.g., "1:1", "16:9")
             resolution: Output resolution (e.g., "1k", "2k")
             seed: Random seed (None = random)
             **kwargs: Additional API parameters
-        
+
         Returns:
             APIResponse with request status
-            
+
         Notes:
-            - V7 endpoints require image URLs (not local files or base64)
+            - V7 supports both public URLs and base64-encoded images
+            - base64 flag is added automatically when non-URL images are detected
             - init_image can be a list
         """
-        # V7 requires URLs - prepare images accordingly
         if isinstance(images, str):
             images = [images]
-        
-        # Check if we need to handle local files
+
+        # V7 requires raw base64 (no data URI prefix)
         prepared_images = []
         for img in images:
-            if not is_url(img):
-                raise ValueError(f"V7 endpoint requires URLs. Got local path: {img}")
+            if is_base64(img) and img.startswith("data:"):
+                # Strip "data:image/xxx;base64," prefix
+                img = img.split(",", 1)[1]
             prepared_images.append(img)
-        
+
         payload = self.payload_builder.build_img2img_v7_payload(
             prompt=prompt,
             images=prepared_images,
@@ -1517,7 +1544,13 @@ class ModelsLabAPI:
             seed=seed,
             **kwargs
         )
-        
+
+        # Diagnostic: log payload summary (truncate image data)
+        debug_payload = {k: (v[:80] + "..." if isinstance(v, str) and len(v) > 80 else v)
+                         for k, v in payload.items()}
+        print(f"[img2img_v7] payload keys: {list(payload.keys())}")
+        print(f"[img2img_v7] payload (truncated): {debug_payload}")
+
         return self._make_request(Endpoint.IMG2IMG_V7, payload)
     
     def txt2img_v7(
