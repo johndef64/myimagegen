@@ -223,28 +223,67 @@ FLUX1_LORAS = {
 }
 
 # ---- Flux 2 (flux-2-dev) ---------------------------------------------------
-# Flux 2 uses the same lora_model API parameter but needs Flux-2-native LoRAs.
-# ModelsLab hosts flux-2-dev LoRAs alongside their model pages.
+# IMPORTANT: FLUX.2 is a brand-new architecture (Mistral Small 3.1 text encoder,
+# 32B params, ~80GB VRAM for training). As of early 2026, virtually NO native
+# Flux-2-specific LoRAs exist on ModelsLab as model IDs.
+# The few LoRAs tagged "Flux.2" on ModelsLab pages are Flux 1.x LoRAs that may
+# partially work but are NOT native Flux 2.
+# ModelsLab accepts HuggingFace repo IDs in lora_model for this model.
+# These are the best confirmed FLUX.2-dev native LoRAs on HuggingFace:
 FLUX2_LORAS = {
-    "Fluxgram V1.0 (Realism/Skin)": "fluxgram-v1-0",
-    "Middle Finger Flux2 V2.0": "middle-finger-flux-dev-lora-v2-0",
-    "Uncensored Flux2": "uncensored-flux-lora",
-    "XE GuoMan V0.2": "xe-guoman-lora-v0-2-flux",
-    "RD Pixel Art V2 Uncensored": "rd-pixel-art-lora-flux-v2-uncensored",
-    "Anime Art Style": "anime-art-stylelora",
+    "Turbo Speed (8-step inference) [fal]": "fal/FLUX.2-dev-Turbo",
+    "Tarot Card Style [trigger: trcrd]": "multimodalart/tarot_card_Flux2_LoRA",
+    "Berthe Morisot Impressionist Style": "lovis93/Flux-2-Multi-Angles-LoRA-v2",
+    "Multi-Angle Views V2": "lovis93/Flux-2-Multi-Angles-LoRA-v2",
 }
 
-# ---- Z-Image (z-image-base, z-image-turbo) ---------------------------------
-# Z-Image accepts HuggingFace repo IDs as lora_model values.
-ZIMAGE_LORAS = {
-    "Classic Painting (Old Masters)": "renderartist/Classic-Painting-Z-Image-Turbo-LoRA",
-    "Coloring Book Style": "renderartist/Coloring-Book-Z-Image-Turbo-LoRA",
-    "Children's Drawings": "ostris/z_image_turbo_childrens_drawings",
-    "Realism Boost": "suayptalha/Z-Image-Turbo-Realism-LoRA",
-    "Historic Color (Early 1900s)": "AlekseyCalvin/HistoricColor_Z-image-Turbo-LoRA",
+# ---- Z-Image Base / Turbo — NOTA IMPORTANTE --------------------------------
+#
+# ModelsLab usa `lora_model` come stringa ID nel proprio catalogo interno.
+# Le LoRA z-image NON sono ancora indicizzate in ModelsLab come model ID.
+#
+# SOLUZIONE: ModelsLab accetta URL diretti a file .safetensors nel campo
+# `lora_model` per alcuni endpoint — questo è documentato nell'endpoint
+# load_model_v2 e confermato in community. I dizionari qui sotto usano
+# URL diretti a file .safetensors su HuggingFace (resolve/main/...).
+# Se un URL non funziona, l'utente può inserirlo manualmente nel campo
+# Custom LoRA ID della pagina.
+#
+# Formato URL HF diretto: https://huggingface.co/<owner>/<repo>/resolve/main/<file>.safetensors
+
+ZIMAGE_BASE_LORAS: dict = {
+    # Z-Image Base (modello non distillato) — LoRAs da HF/CivitAI
+    "Technically Color (Vivid Cinematic)": "https://huggingface.co/renderartist/Technically-Color-Z-Image-Turbo/resolve/main/Technically_Color_Z_Image_Turbo_v1_renderartist_1000.safetensors",
+    "Classic Painting (Old Masters)": "https://huggingface.co/renderartist/Classic-Painting-Z-Image-Turbo-LoRA/resolve/main/Classic_Painting_Z_Image_Turbo_v1_renderartist_1750.safetensors",
+    "Coloring Book [trigger: c0l0ringb00k]": "https://huggingface.co/renderartist/Coloring-Book-Z-Image-Turbo-LoRA/resolve/main/Coloring_Book_Z_Image_Turbo_v1_renderartist_2000.safetensors",
+    "Realism Boost [trigger: Realism]": "https://huggingface.co/suayptalha/Z-Image-Turbo-Realism-LoRA/resolve/main/z_image_turbo_realism.safetensors",
+    "Historic Color (Early 1900s)": "https://huggingface.co/AlekseyCalvin/HistoricColor_Z-image-Turbo-LoRA/resolve/main/HistoricColor_ZIT_AlekseyCalvin_T200.safetensors",
+    "Saturday Morning Cartoon": "https://huggingface.co/renderartist/Saturday-Morning-Z-Image-Turbo/resolve/main/Saturday_Morning_Z_Image_Turbo_v1_renderartist_1500.safetensors",
+    "Children's Drawings": "https://huggingface.co/ostris/z_image_turbo_childrens_drawings/resolve/main/z_image_turbo_childrens_drawings_v1_ostris_3000.safetensors",
 }
 
-# Legacy alias kept for backward compat
+ZIMAGE_TURBO_LORAS: dict = {
+    # Z-Image Turbo (distillato) — LoRAs specifiche per il modello veloce
+    "Anime Illustration Style [Elusarca]": "https://huggingface.co/reverentelusarca/elusarca-anime-style-lora-z-image-turbo/resolve/main/elusarca_anime_style_zimage_turbo.safetensors",
+    "Pixel Art [trigger: pixel art]": "https://huggingface.co/reverentelusarca/elusarca-pixel-art-style-lora-zimage-turbo/resolve/main/elusarca_pixel_art_zimage_turbo.safetensors",
+    "Technically Color (Vivid Cinematic)": "https://huggingface.co/renderartist/Technically-Color-Z-Image-Turbo/resolve/main/Technically_Color_Z_Image_Turbo_v1_renderartist_1000.safetensors",
+    "Classic Painting (Old Masters)": "https://huggingface.co/renderartist/Classic-Painting-Z-Image-Turbo-LoRA/resolve/main/Classic_Painting_Z_Image_Turbo_v1_renderartist_1750.safetensors",
+    "Coloring Book [trigger: c0l0ringb00k]": "https://huggingface.co/renderartist/Coloring-Book-Z-Image-Turbo-LoRA/resolve/main/Coloring_Book_Z_Image_Turbo_v1_renderartist_2000.safetensors",
+    "Realism Boost [trigger: Realism]": "https://huggingface.co/suayptalha/Z-Image-Turbo-Realism-LoRA/resolve/main/z_image_turbo_realism.safetensors",
+    "Historic Color (Early 1900s)": "https://huggingface.co/AlekseyCalvin/HistoricColor_Z-image-Turbo-LoRA/resolve/main/HistoricColor_ZIT_AlekseyCalvin_T200.safetensors",
+    "Children's Drawings [ostris]": "https://huggingface.co/ostris/z_image_turbo_childrens_drawings/resolve/main/z_image_turbo_childrens_drawings_v1_ostris_3000.safetensors",
+    "Saturday Morning Cartoon": "https://huggingface.co/renderartist/Saturday-Morning-Z-Image-Turbo/resolve/main/Saturday_Morning_Z_Image_Turbo_v1_renderartist_1500.safetensors",
+}
+
+# ⚠️ NOTA: questi URL .safetensors funzionano su fal.ai/novita.ai.
+# Su ModelsLab potrebbero non essere accettati — se fallisce, usare
+# il campo Custom LoRA ID nella pagina e segnalare a ModelsLab di
+# indicizzare queste LoRA nel loro catalogo.
+
+# Legacy alias (kept for backward compat)
+ZIMAGE_LORAS = ZIMAGE_TURBO_LORAS
+
+# Legacy alias — FLUXDEV_LORAS pointed to Flux 1.x catalog
 FLUXDEV_LORAS = FLUX1_LORAS
 
 # Map model_id → which LoRA catalog to use
@@ -253,8 +292,8 @@ MODEL_LORA_CATALOG: dict = {
     "fluxdev": FLUX1_LORAS,
     "flux-klein": FLUX1_LORAS,
     "flux-2-dev": FLUX2_LORAS,
-    "z-image-base": ZIMAGE_LORAS,
-    "z-image-turbo": ZIMAGE_LORAS,
+    "z-image-base": ZIMAGE_BASE_LORAS,
+    "z-image-turbo": ZIMAGE_TURBO_LORAS,
 }
 
 def get_lora_catalog(model_id: str) -> dict:
@@ -1934,6 +1973,58 @@ class ModelsLabAPI:
         response.raise_for_status()
         
         return APIResponse.from_dict(response.json())
+
+    # ========== LORA LOADER ==========
+
+    LOAD_MODEL_V2_URL = "https://modelslab.com/api/v1/enterprise/load_model_v2"
+
+    def load_lora(
+        self,
+        url: str,
+        model_id: str,
+        model_format: str = "safetensors",
+        revision: str = "fp16",
+        webhook: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Load an external LoRA into ModelsLab from CivitAI, HuggingFace or direct URL.
+
+        The LoRA will be registered under `model_id` and can then be used in
+        generation calls as `lora_model=model_id`.
+
+        Args:
+            url:          CivitAI download URL, HuggingFace repo ("owner/repo"),
+                          or direct .safetensors URL.
+            model_id:     Unique ID to assign. Use only a-z, 0-9, hyphens.
+            model_format: "safetensors" | "ckpt" | "pt" | "diffusers"
+            revision:     "fp16" (default) or "fp32"
+            webhook:      Optional URL to receive completion callback.
+
+        Returns:
+            Raw JSON dict from the API.
+        """
+        payload: Dict[str, Any] = {
+            "key": self.api_key,
+            "url": url,
+            "model_id": model_id,
+            "model_category": "lora",
+            "model_format": model_format,
+            "revision": revision,
+        }
+        if webhook:
+            payload["webhook"] = webhook
+
+        headers = {"Content-Type": "application/json"}
+        self._log(f"Loading LoRA '{model_id}' from: {url[:80]}...")
+        response = requests.post(self.LOAD_MODEL_V2_URL, headers=headers, json=payload)
+        if not response.ok:
+            self._log(f"[load_lora] HTTP {response.status_code}: {response.text}")
+            response.raise_for_status()
+        result = response.json()
+        self._log(f"[load_lora] Response: {result}")
+        return result
+
+
     
     def fetch_result_(self, request_id: str) -> APIResponse:
         payload = {

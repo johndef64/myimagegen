@@ -2,10 +2,13 @@
 ModelsLab Image Generator Page - Streamlit interface for ModelsLab API.
 
 This page provides a full-featured image generation interface using the ModelsLab API:
-- Text-to-Image (txt2img): Generate images from text prompts
-- Image-to-Image (img2img): Transform existing images based on prompts
+- Text-to-Image (txt2img): Generate images from text prompts (V6 and V7 models)
+- Image-to-Image (img2img): Transform existing images based on prompts (V6 and V7 models)
 - Qwen Edit: Advanced image editing with Qwen model
-- V7 img2img: Advanced image transformations (seedream, gen4, etc.)
+
+V7 models (seedream, gen4, flux-2-pro, wan-2.7, grok-imagine, etc.) are integrated
+directly in the Text to Image and Image to Image modes. The correct API protocol
+(V6 or V7) is selected automatically based on the model's configuration.
 
 Key Features:
 - Asynchronous image generation with real-time status updates
@@ -57,7 +60,8 @@ from modelslab.modelslab_api import (
     FLUXDEV_LORAS,
     FLUX1_LORAS,
     FLUX2_LORAS,
-    ZIMAGE_LORAS,
+    ZIMAGE_BASE_LORAS,
+    ZIMAGE_TURBO_LORAS,
     MODEL_LORA_CATALOG,
     get_lora_catalog,
     get_model_config,
@@ -82,7 +86,6 @@ DEFAULT_MODEL_BY_MODE = {
     "Text to Image": "flux-2-dev",
     "Image to Image": "flux-2-dev",
     "Qwen Edit": "qwen-edit-2511",   # 2511 is the newer, better model
-    "V7 img2img": "wan-2.7-i2i",
 }
 
 def is_qwen_edit_model(model_id: Optional[str]) -> bool:
@@ -103,14 +106,12 @@ def get_models_for_mode(mode: str) -> List[str]:
         elif mode == "Image to Image":
             if not model_supports_img2img(model_id):
                 continue
-            if endpoint_img in (Endpoint.QWEN_EDIT, Endpoint.IMG2IMG_V7):
+            # Include V6 img2img AND V7 img2img models, exclude Qwen Edit
+            if endpoint_img == Endpoint.QWEN_EDIT:
                 continue
             models.append(model_id)
         elif mode == "Qwen Edit":
             if endpoint_img == Endpoint.QWEN_EDIT:
-                models.append(model_id)
-        elif mode == "V7 img2img":
-            if endpoint_img == Endpoint.IMG2IMG_V7:
                 models.append(model_id)
     return sorted(models)
 
@@ -144,6 +145,21 @@ def is_v7_model(model_id: Optional[str]) -> bool:
         return False
     config = get_model_config(model_id)
     return config.get("api_version") == "v7"
+
+
+# Flux-based models are guidance-distilled and operate at CFG ≈ 1.
+# Negative prompts have no effect on these architectures.
+# Z-Image is based on similar flow-matching; negative prompt has minimal impact.
+NEGATIVE_PROMPT_IGNORED_PREFIXES = (
+    "flux", "z-image",
+)
+
+def model_ignores_negative_prompt(model_id: Optional[str]) -> bool:
+    """Return True if the model architecture ignores negative_prompt."""
+    if not model_id:
+        return False
+    mid = model_id.lower()
+    return any(mid.startswith(p) for p in NEGATIVE_PROMPT_IGNORED_PREFIXES)
 
 
 def get_aspect_ratio_options(model_id: Optional[str], resolution_tier: str = "") -> Dict[str, str]:
@@ -198,19 +214,15 @@ def get_mslab_api() -> Optional[ModelsLabAPI]:
     return st.session_state.get('mslab_api')
 
 def load_prompts_from_yaml(file_path="prompts.yaml"):
+    """Load prompts from YAML file"""
     root_path = "prompts/"
     file_path = os.path.join(root_path, file_path)
-    """Load prompts from YAML file"""
     if not os.path.exists(file_path):
         return {}
-    # if os.path.exists("prompts/prompts_custom.yaml"):
-    #     file_path = "prompts/prompts_custom.yaml"
     try:
-        if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                prompts_data = yaml.safe_load(f)
-                return prompts_data
-        return {}
+        with open(file_path, 'r', encoding='utf-8') as f:
+            prompts_data = yaml.safe_load(f)
+            return prompts_data
     except Exception as e:
         st.error(f"Error loading prompts: {str(e)}")
         return {}
@@ -647,9 +659,9 @@ def show_modelslab_generator_page():
         st.subheader("Generation Mode")
         generation_mode = st.radio(
             "Mode",
-            ["Text to Image", "Image to Image", "Qwen Edit", "V7 img2img"],
+            ["Text to Image", "Image to Image", "Qwen Edit"],
             horizontal=True,
-            help="Choose generation mode"
+            help="Choose generation mode. V7 models (seedream, gen4, etc.) are available in Image to Image."
         )
         
         st.divider()
@@ -683,16 +695,33 @@ def show_modelslab_generator_page():
         _lora_catalog = get_lora_catalog(selected_model)
         _lora_supported = bool(_lora_catalog) and generation_mode != "Qwen Edit"
 
+        # Nota specifica per z-image: LoRAs via URL diretti .safetensors
+        # if "z-image" in selected_model and generation_mode != "Qwen Edit":
+            # st.caption(
+            #     "⚠️ Z-Image LoRAs: URL diretti a `.safetensors` su HuggingFace. "
+            #     "Non sono model ID ModelsLab — potrebbero richiedere test. "
+            #     "Se falliscono, segnalalo e usa Custom LoRA ID."
+            # )
+
         if _lora_supported:
             st.subheader("LoRA Settings")
 
             # Explain which family this catalog belongs to
             if selected_model == "flux-2-dev":
-                st.caption("🟣 Flux **2** LoRAs — incompatible with Flux 1.x")
+                st.caption("🟣 Flux **2** LoRAs (HF repo IDs — native Flux 2 LoRAs)")
+                # st.warning(
+                #     "⚠️ FLUX.2 è un'architettura completamente nuova (32B param, "
+                #     "~80GB VRAM per training). I LoRA nativi per Flux 2 sono pochissimi. "
+                #     "Usa il campo **Custom LoRA ID** per inserire manualmente un repo HF "
+                #     "(`owner/repo`) trovato su HuggingFace cercando 'FLUX.2-dev LoRA'.",
+                #     icon="⚠️"
+                # )
             elif selected_model in ("flux", "fluxdev", "flux-klein"):
                 st.caption("🔵 Flux **1.x** LoRAs — incompatible with Flux 2")
-            elif "z-image" in selected_model:
-                st.caption("🟢 Z-Image LoRAs (HuggingFace repo IDs)")
+            elif selected_model == "z-image-base":
+                st.caption("🟢 Z-Image **Base** LoRAs — URL .safetensors HuggingFace")
+            elif selected_model == "z-image-turbo":
+                st.caption("🟡 Z-Image **Turbo** LoRAs — URL .safetensors HuggingFace (≠ Base)")
 
             use_lora = st.checkbox("Use LoRA", value=False, key="use_lora_chk")
             if use_lora:
@@ -758,7 +787,9 @@ def show_modelslab_generator_page():
                     "Higher resolution = better detail but slower & more expensive.\n"
                     "v6: up to 1500 px/side (~1.7 MP max) | Qwen: up to ~7 MP | V7: max 1024 px/side"
                 ),
-                key="resolution_tier_select"
+                # KEY dinamica per modello: forza reset quando cambia il modello
+                # (tier labels cambiano tra V6/Qwen/V7, indice precedente non è più valido)
+                key=f"resolution_tier_{selected_model}"
             )
         else:
             resolution_tier = tier_labels[0]
@@ -770,9 +801,14 @@ def show_modelslab_generator_page():
             options=list(aspect_options.keys()),
             index=0,
             disabled=use_auto_aspect,
-            help="Target aspect ratio for generated image"
+            help="Target aspect ratio for generated image",
+            # KEY dinamica per modello + tier: forza reset quando cambia modello o tier
+            # (i ratio disponibili cambiano tra V6/Qwen/V7 e tra tier diversi)
+            key=f"aspect_ratio_{selected_model}_{resolution_tier}"
         )
-        aspect_ratio = aspect_options.get(aspect_ratio_display)
+        # Fallback esplicito: se il valore selezionato non è nel dict (mismatch post-cambio modello),
+        # usa il primo ratio disponibile invece di ritornare None silenziosamente
+        aspect_ratio = aspect_options.get(aspect_ratio_display) or next(iter(aspect_options.values()))
         
         # Prompt source settings
         PROMPTS_FILES = {
@@ -823,7 +859,7 @@ def show_modelslab_generator_page():
                 help="How closely to follow the prompt"
             )
             
-            if generation_mode in ("Image to Image", "V7 img2img"):
+            if generation_mode in ("Image to Image",):
                 strength = st.slider(
                     "Transformation Strength",
                     min_value=0.1,
@@ -1132,9 +1168,10 @@ def show_modelslab_generator_page():
             )
         
 
-        # Negative Prompt (not supported by Qwen Edit)
+        # Negative Prompt (not supported by Qwen Edit; ignored by Flux/Z-Image architecture)
         negative_prompt = None
         if generation_mode != "Qwen Edit":
+            _neg_ignored = model_ignores_negative_prompt(selected_model)
             DEFAULT_NEGATIVE_PROMPT = (
                 "ugly, deformed, disfigured, blurry, low quality, low resolution, "
                 "bad anatomy, bad hands, extra fingers, missing fingers, watermark, "
@@ -1145,10 +1182,19 @@ def show_modelslab_generator_page():
                 value=DEFAULT_NEGATIVE_PROMPT,
                 height=80,
                 key="negative_prompt_input",
+                disabled=_neg_ignored,
                 help="Describe what you want to AVOID in the generated image. Not supported by Qwen Edit."
             )
-            # Pass None to API if the user cleared the field
-            negative_prompt = negative_prompt_value.strip() if negative_prompt_value and negative_prompt_value.strip() else None
+            if _neg_ignored:
+                st.caption(
+                    f"⚠️ **{selected_model}** usa un'architettura guidance-distilled (Flux/Z-Image) "
+                    "che **ignora i negative prompt**. Usa frasi positive nel prompt principale "
+                    "per descrivere ciò che vuoi (es. 'sharp focus, crisp detail' invece di 'not blurry')."
+                )
+                negative_prompt = None  # Don't send — model ignores it anyway
+            else:
+                # Pass None to API if the user cleared the field
+                negative_prompt = negative_prompt_value.strip() if negative_prompt_value and negative_prompt_value.strip() else None
 
         # Reference images upload (for img2img modes)
         reference_images = None
@@ -1156,8 +1202,9 @@ def show_modelslab_generator_page():
         if generation_mode != "Text to Image":
             st.subheader("Reference Images")
 
-            # V7 img2img: offer both file upload and URL input
-            if generation_mode == "V7 img2img":
+            # V7 models require URLs: offer both file upload and URL input
+            _selected_is_v7 = is_v7_model(selected_model)
+            if _selected_is_v7:
                 v7_input_mode = st.radio(
                     "Image input mode",
                     ["Upload file", "Paste URL"],
@@ -1211,8 +1258,8 @@ def show_modelslab_generator_page():
                                 st.image(img, caption=f"Ref {idx+1}", width=150)
                             st.caption(f"Size: {img.size[0]}×{img.size[1]}")
 
-                    # V7: auto-upload to imgBB as soon as files are loaded
-                    if generation_mode == "V7 img2img" and reference_images:
+                    # V7 models: auto-upload to imgBB as soon as files are loaded
+                    if _selected_is_v7 and reference_images:
                         # Use file names as cache key to avoid re-uploading same files
                         current_file_key = tuple(f.name for f in used_files)
                         if st.session_state.get("imgbb_file_key") != current_file_key:
@@ -1341,11 +1388,12 @@ def show_modelslab_generator_page():
                         
                         # Prepare images for API
                         image_data = None
+                        _is_v7 = is_v7_model(selected_model)
                         if v7_url_images:
                             # V7 URL mode or imgBB URLs: pass URLs directly
                             image_data = v7_url_images
                         elif reference_images:
-                            if generation_mode == "V7 img2img":
+                            if _is_v7:
                                 # V7 REQUIRES URLs — must upload to imgBB first
                                 # If we got here, imgBB upload didn't happen or failed
                                 try:
@@ -1376,13 +1424,11 @@ def show_modelslab_generator_page():
                         # We pass explicit width/height so the API always uses the right
                         # resolution regardless of the tier — instead of relying on the API's
                         # internal default dict.
+                        # actual_aspect_ratio is already correctly set above (either from
+                        # auto-detect on the reference image, or from the user's selectbox).
+                        # Fall back to first entry if the ratio isn't in the tier dict.
                         _tier_dict = resolution_tiers.get(resolution_tier) or next(iter(resolution_tiers.values()))
-                        if use_auto_aspect and reference_images:
-                            # Auto mode: map the detected ratio to the chosen tier dict;
-                            # if the ratio isn't in the tier dict, fall back to the first entry.
-                            _dims = _tier_dict.get(actual_aspect_ratio) or next(iter(_tier_dict.values()))
-                        else:
-                            _dims = _tier_dict.get(actual_aspect_ratio) or next(iter(_tier_dict.values()))
+                        _dims = _tier_dict.get(actual_aspect_ratio) or next(iter(_tier_dict.values()))
                         _out_width, _out_height = _dims
 
                         generation_kwargs: Dict[str, Any] = {
@@ -1402,16 +1448,26 @@ def show_modelslab_generator_page():
                                 # "resolution": "1.3K"
                             })
                         elif generation_mode == "Image to Image":
-                            generation_kwargs.update({
-                                "num_inference_steps": num_inference_steps,
-                                "guidance_scale": guidance_scale,
-                                "scheduler": scheduler,
-                                "strength": strength,
-                                "resize_mp": resize_mp,
-                                "lora_model": lora_model if use_lora else None,
-                                "lora_strength": lora_strength if use_lora else None,
-                                "negative_prompt": negative_prompt,
-                            })
+                            if _is_v7:
+                                # V7 img2img: no scheduler, no lora, no resize_mp
+                                generation_kwargs.update({
+                                    "num_inference_steps": num_inference_steps,
+                                    "guidance_scale": guidance_scale,
+                                    "strength": strength,
+                                    "negative_prompt": negative_prompt,
+                                })
+                            else:
+                                # Standard V6 img2img
+                                generation_kwargs.update({
+                                    "num_inference_steps": num_inference_steps,
+                                    "guidance_scale": guidance_scale,
+                                    "scheduler": scheduler,
+                                    "strength": strength,
+                                    "resize_mp": resize_mp,
+                                    "lora_model": lora_model if use_lora else None,
+                                    "lora_strength": lora_strength if use_lora else None,
+                                    "negative_prompt": negative_prompt,
+                                })
       
                         elif generation_mode == "Qwen Edit":
                             generation_kwargs.update({
@@ -1419,27 +1475,9 @@ def show_modelslab_generator_page():
                                 "num_inference_steps": num_inference_steps,
                                 # negative_prompt NOT supported by qwen_edit endpoint
                             })
-                        else:  # V7 img2img
-                            generation_kwargs.update({
-                                "num_inference_steps": num_inference_steps,
-                                "guidance_scale": guidance_scale,
-                                "strength": strength,
-                                "negative_prompt": negative_prompt,
-                            })
 
-                        if selected_model == "flux-2-dev":
-                            print(f"Using flux-2-dev specific parameters: strength = {strength}, size = {_out_width}×{_out_height}")
-                            generation_kwargs = {
-                                "width": _out_width,
-                                "height": _out_height,
-                                "seed": seed,
-                                # "guidance_scale": guidance_scale,
-                                # "scheduler": scheduler,
-                                "strength": strength,
-                                "negative_prompt": negative_prompt,
-                                "lora_model": lora_model if use_lora else None,
-                                "lora_strength": lora_strength if use_lora else None,
-                            }
+                        # NOTE: flux-2-dev is handled by the standard branches above.
+                        # No special override needed — generate_base() routes correctly.
 
                         response = api.generate(
                             prompt=prompt,
@@ -1792,6 +1830,204 @@ def show_modelslab_generator_page():
                 # Code block for easy copying
                 st.code(hist_item['result'], language=None)
 """
+
+    # ============================================================================
+    # LORA MANAGER
+    # ============================================================================
+    st.divider()
+    st.subheader("🧩 LoRA Manager — Carica LoRA esterne su ModelsLab")
+    st.markdown(
+        "Registra LoRA da HuggingFace o CivitAI nel tuo account ModelsLab tramite l'endpoint `load_model_v2`. "
+        "Una volta caricate, puoi usarle nella generazione come qualsiasi altra LoRA ModelsLab."
+    )
+
+    with st.expander("📥 Carica una nuova LoRA", expanded=False):
+        lm_col1, lm_col2 = st.columns([2, 1])
+
+        with lm_col1:
+            # Preset catalogs per model family
+            LORA_PRESETS = {
+                "— Inserisci manualmente —": ("", ""),
+                # Z-Image Turbo
+                "Z-Image Turbo · Anime Illustration [Elusarca]": (
+                    "https://huggingface.co/reverentelusarca/elusarca-anime-style-lora-z-image-turbo/resolve/main/elusarca_anime_style_zimage_turbo.safetensors",
+                    "zit-anime-elusarca"
+                ),
+                "Z-Image Turbo · Pixel Art [Elusarca]": (
+                    "https://huggingface.co/reverentelusarca/elusarca-pixel-art-style-lora-zimage-turbo/resolve/main/elusarca_pixel_art_zimage_turbo.safetensors",
+                    "zit-pixel-art-elusarca"
+                ),
+                "Z-Image Turbo · Technically Color [renderartist]": (
+                    "https://huggingface.co/renderartist/Technically-Color-Z-Image-Turbo/resolve/main/Technically_Color_Z_Image_Turbo_v1_renderartist_1000.safetensors",
+                    "zit-technically-color"
+                ),
+                "Z-Image Turbo · Classic Painting [renderartist]": (
+                    "https://huggingface.co/renderartist/Classic-Painting-Z-Image-Turbo-LoRA/resolve/main/Classic_Painting_Z_Image_Turbo_v1_renderartist_1750.safetensors",
+                    "zit-classic-painting"
+                ),
+                "Z-Image Turbo · Coloring Book [renderartist, trigger: c0l0ringb00k]": (
+                    "https://huggingface.co/renderartist/Coloring-Book-Z-Image-Turbo-LoRA/resolve/main/Coloring_Book_Z_Image_Turbo_v1_renderartist_2000.safetensors",
+                    "zit-coloring-book"
+                ),
+                "Z-Image Turbo · Realism Boost [suayptalha, trigger: Realism]": (
+                    "https://huggingface.co/suayptalha/Z-Image-Turbo-Realism-LoRA/resolve/main/z_image_turbo_realism.safetensors",
+                    "zit-realism-boost"
+                ),
+                "Z-Image Turbo · Historic Color 1900s [AlekseyCalvin]": (
+                    "https://huggingface.co/AlekseyCalvin/HistoricColor_Z-image-Turbo-LoRA/resolve/main/HistoricColor_ZIT_AlekseyCalvin_T200.safetensors",
+                    "zit-historic-color"
+                ),
+                "Z-Image Turbo · Children's Drawings [ostris]": (
+                    "https://huggingface.co/ostris/z_image_turbo_childrens_drawings/resolve/main/z_image_turbo_childrens_drawings_v1_ostris_3000.safetensors",
+                    "zit-childrens-drawings"
+                ),
+                "Z-Image Turbo · Saturday Morning Cartoon [renderartist]": (
+                    "https://huggingface.co/renderartist/Saturday-Morning-Z-Image-Turbo/resolve/main/Saturday_Morning_Z_Image_Turbo_v1_renderartist_1500.safetensors",
+                    "zit-saturday-cartoon"
+                ),
+                # Flux 2
+                "Flux 2 · Turbo 8-step [fal/FLUX.2-dev-Turbo]": (
+                    "fal/FLUX.2-dev-Turbo",
+                    "flux2-turbo-fal"
+                ),
+            }
+
+            selected_preset = st.selectbox(
+                "Scegli un preset o inserisci manualmente",
+                options=list(LORA_PRESETS.keys()),
+                key="lm_preset"
+            )
+            preset_url, preset_id = LORA_PRESETS[selected_preset]
+
+            # Forza aggiornamento dei campi quando cambia il preset.
+            # Confronta il preset selezionato con l'ultimo salvato in session_state:
+            # se è cambiato, sovrascrive url e model_id prima che vengano renderizzati.
+            if st.session_state.get("lm_last_preset") != selected_preset:
+                st.session_state["lm_last_preset"] = selected_preset
+                st.session_state["lm_url"] = preset_url
+                st.session_state["lm_model_id"] = preset_id
+
+            lm_url = st.text_input(
+                "URL LoRA",
+                placeholder="https://huggingface.co/.../file.safetensors  oppure  owner/repo  oppure  CivitAI URL",
+                key="lm_url",
+                help="URL diretto al .safetensors, repo HuggingFace (owner/repo) o URL download CivitAI"
+            )
+            lm_model_id = st.text_input(
+                "Model ID da assegnare",
+                placeholder="es. zit-anime-elusarca",
+                key="lm_model_id",
+                help="ID univoco con cui userai questa LoRA in generazione. Solo a-z, 0-9, trattini."
+            )
+
+        with lm_col2:
+            lm_format = st.selectbox(
+                "Formato",
+                ["safetensors", "ckpt", "pt", "diffusers"],
+                key="lm_format"
+            )
+            lm_revision = st.selectbox(
+                "Precisione",
+                ["fp16", "fp32"],
+                key="lm_revision"
+            )
+            lm_category = st.selectbox(
+                "Base model",
+                ["z_image", "flux", "stable_diffusion", "stable_diffusion_xl"],
+                help="Categoria del modello base su cui è addestrata la LoRA",
+                key="lm_category"
+            )
+            st.markdown("&nbsp;")  # spacing
+            load_btn = st.button(
+                "📤 Carica LoRA su ModelsLab",
+                type="primary",
+                use_container_width=True,
+                key="lm_load_btn",
+                disabled=not (lm_url.strip() and lm_model_id.strip() and st.session_state.mslab_api_key)
+            )
+
+        if load_btn:
+            if not st.session_state.mslab_api_key:
+                st.error("❌ Inserisci prima la API key nella sidebar.")
+            elif not lm_url.strip():
+                st.error("❌ Inserisci l'URL della LoRA.")
+            elif not lm_model_id.strip():
+                st.error("❌ Inserisci un Model ID.")
+            else:
+                with st.spinner(f"Caricamento di '{lm_model_id}' in corso..."):
+                    try:
+                        # model_category: usa il selettore se manuale, altrimenti auto-detect dal preset
+                        if selected_preset == "— Inserisci manualmente —":
+                            _model_cat = lm_category
+                        else:
+                            _label = selected_preset.lower()
+                            if "z-image" in _label or "zit" in _label:
+                                _model_cat = "z_image"
+                            elif "flux" in _label:
+                                _model_cat = "flux"
+                            elif "sdxl" in _label or "xl" in _label:
+                                _model_cat = "stable_diffusion_xl"
+                            else:
+                                _model_cat = "stable_diffusion"
+
+                        _payload = {
+                            "key": st.session_state.mslab_api_key,
+                            "url": lm_url.strip(),
+                            "model_id": lm_model_id.strip(),
+                            "model_category": _model_cat,
+                            "model_subcategory": "lora",
+                            "model_format": lm_format,
+                            "model_name": lm_model_id.strip(),
+                            "model_visibility": "private",
+                            "model_image": "https://assets.modelslab.ai/generations/95aebdb1-302f-42c4-b461-64b6ce9214e4",
+                            "revision": lm_revision,
+                            "force_load": "yes",
+                            "hf_upload": "no",
+                        }
+                        _resp = http_requests.post(
+                            "https://modelslab.com/api/v3/load_model",
+                            headers={"Content-Type": "application/json"},
+                            json=_payload,
+                            timeout=30
+                        )
+                        _resp.raise_for_status()
+                        result = _resp.json()
+                        status = result.get("status", "")
+                        msg = result.get("message") or result.get("messege") or str(result)
+                        if status in ("success", "processing", "deployed", "ok"):
+                            st.success(
+                                f"✅ **{lm_model_id}** caricata con successo!\n\n"
+                                f"Status: `{status}` — {msg}\n\n"
+                                f"Puoi ora usarla nella generazione con **Custom LoRA ID**: `{lm_model_id}`"
+                            )
+                            # Save to session state registry
+                            if "loaded_loras" not in st.session_state:
+                                st.session_state.loaded_loras = {}
+                            st.session_state.loaded_loras[lm_model_id.strip()] = {
+                                "url": lm_url.strip(),
+                                "format": lm_format,
+                                "label": selected_preset if selected_preset != "— Inserisci manualmente —" else lm_model_id.strip(),
+                                "loaded_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            }
+                        else:
+                            st.error(f"❌ Risposta API: {result}")
+                    except Exception as e:
+                        st.error(f"❌ Eccezione: {e}")
+
+    # ---- Registro LoRA caricate in sessione ----
+    if st.session_state.get("loaded_loras"):
+        st.markdown("**LoRA caricate in questa sessione** (usale come Custom LoRA ID in generazione):")
+        reg_cols = st.columns([3, 2, 1, 1])
+        reg_cols[0].markdown("**Label**")
+        reg_cols[1].markdown("**Model ID**")
+        reg_cols[2].markdown("**Formato**")
+        reg_cols[3].markdown("**Caricata**")
+        for mid, info in st.session_state.loaded_loras.items():
+            c0, c1, c2, c3 = st.columns([3, 2, 1, 1])
+            c0.write(info["label"][:50])
+            c1.code(mid)
+            c2.write(info["format"])
+            c3.write(info["loaded_at"])
 
     # ============================================================================
     # FOOTER
