@@ -56,7 +56,22 @@ class AspectRatio(Enum):
     LANDSCAPE_3_2 = "3:2"
 
 
-# Dimension maps for different endpoints
+# ============================================================================
+# RESOLUTION PRESETS
+# ============================================================================
+# Resolution tiers for v6 endpoints (txt2img / img2img):
+#   - API accepts 256–1500 px per side (confirmed hard limit)
+#   - All values must be multiples of 8
+# Resolution tiers for Qwen Edit:
+#   - Qwen-Image works well from 1.5 MP to ~17 MP
+#   - Official presets top out at ~1664×928; higher values are accepted
+# Resolution tiers for V7 endpoints:
+#   - Hard cap of 1024 px per side (enforced by the API)
+
+# ---- v6 txt2img / img2img ------------------------------------------------
+# Real v6 API limit: max 1500 px per side (confirmed). All values mult of 8.
+
+# ~1 MP (standard)
 SIZE_IMAGE_DICT = {
     "1:1": (1024, 1024),
     "3:4": (888, 1184),
@@ -69,6 +84,41 @@ SIZE_IMAGE_DICT = {
     "3:2": (1184, 888),
 }
 
+# ~1.3 MP (high quality) — all sides ≤ 1500
+SIZE_IMAGE_DICT_HIGH = {
+    "1:1": (1152, 1152),
+    "3:4": (1000, 1336),
+    "1:2": (752, 1496),
+    "9:16": (840, 1496),
+    "4:3": (1336, 1000),
+    "2:1": (1496, 752),
+    "16:9": (1496, 840),
+    "2:3": (968, 1448),
+    "3:2": (1448, 968),
+}
+
+# ~1.7 MP (ultra — max safe for v6, both sides ≤ 1500)
+SIZE_IMAGE_DICT_ULTRA = {
+    "1:1": (1320, 1320),
+    "3:4": (1136, 1496),
+    "1:2": (848, 1496),
+    "9:16": (848, 1496),
+    "4:3": (1496, 1136),
+    "2:1": (1496, 848),
+    "16:9": (1496, 848),
+    "2:3": (1000, 1496),
+    "3:2": (1496, 1000),
+}
+
+# Grouped by quality label for UI
+SIZE_IMAGE_TIERS = {
+    "Standard (~1 MP)": SIZE_IMAGE_DICT,
+    "High (~1.3 MP)": SIZE_IMAGE_DICT_HIGH,
+    "Ultra (~1.7 MP, max)": SIZE_IMAGE_DICT_ULTRA,
+}
+
+# ---- Qwen Edit ------------------------------------------------------------
+# Standard Qwen preset (~1.7 MP)
 QWEN_SIZE_DICT = {
     "1:1": (1328, 1328),
     "16:9": (1664, 928),
@@ -77,6 +127,52 @@ QWEN_SIZE_DICT = {
     "3:4": (1104, 1472),
     "3:2": (1584, 1056),
     "2:3": (1056, 1584),
+}
+
+# High Qwen (~3.5 MP)
+QWEN_SIZE_DICT_HIGH = {
+    "1:1": (1872, 1872),
+    "16:9": (2352, 1320),
+    "9:16": (1320, 2352),
+    "4:3": (2080, 1560),
+    "3:4": (1560, 2080),
+    "3:2": (2240, 1496),
+    "2:3": (1496, 2240),
+}
+
+# Ultra Qwen (~7 MP) — approaching Qwen's practical upper limit
+QWEN_SIZE_DICT_ULTRA = {
+    "1:1": (2656, 2656),
+    "16:9": (3328, 1872),
+    "9:16": (1872, 3328),
+    "4:3": (2944, 2208),
+    "3:4": (2208, 2944),
+    "3:2": (3168, 2112),
+    "2:3": (2112, 3168),
+}
+
+QWEN_SIZE_TIERS = {
+    "Standard (~1.7 MP)": QWEN_SIZE_DICT,
+    "High (~3.5 MP)": QWEN_SIZE_DICT_HIGH,
+    "Ultra (~7 MP)": QWEN_SIZE_DICT_ULTRA,
+}
+
+# ---- V7 img2img / txt2img -------------------------------------------------
+# V7 API caps each side at 1024 px — only one tier available
+V7_SIZE_DICT = {
+    "1:1": (1024, 1024),
+    "3:4": (768, 1024),
+    "1:2": (512, 1024),
+    "9:16": (576, 1024),
+    "4:3": (1024, 768),
+    "2:1": (1024, 512),
+    "16:9": (1024, 576),
+    "2:3": (680, 1024),
+    "3:2": (1024, 680),
+}
+
+V7_SIZE_TIERS = {
+    "Standard (max 1024 px/side)": V7_SIZE_DICT,
 }
 
 SCHEDULER_LIST = [
@@ -100,20 +196,70 @@ SCHEDULER_LIST = [
     "LCMScheduler",
 ]
 
-FLUXDEV_LORAS = {
-    "Blindbox Flux Lora V2.0": "blindbox-flux-lora-v2-0",
-    "Flux Dev Aesthetics Upgrade V1.0": "flux-dev-aesthetics-upgrade-lora-v1-0",
+# ============================================================================
+# LORA CATALOGS  (lora_model = ModelsLab model ID string passed to API)
+# ============================================================================
+# IMPORTANT: Flux 1.x LoRAs (flux / fluxdev / flux-klein) and
+#            Flux 2 LoRAs (flux-2-dev) are NOT interchangeable.
+#            Z-Image LoRAs accept HuggingFace repo IDs directly.
+# All support multi-LoRA: pass comma-separated IDs and strengths.
+
+# ---- Flux 1.x (flux, fluxdev, flux-klein) ----------------------------------
+FLUX1_LORAS = {
+    "Blindbox Style V2.0": "blindbox-flux-lora-v2-0",
+    "Aesthetics Upgrade V1.0": "flux-dev-aesthetics-upgrade-lora-v1-0",
     "Real Lora V2.0 (Realism)": "real-lora-v2-0",
-    "Long Hair LoRA Flux V2": "long-hair-lora-flux-v2",
-    "Uncensored Flux Lora": "specialized-for-unrestricted-detailed-generation",
-    "Flux NSFW Lora V2": "sldr_flux_nsfw_v2",
-    "Fc Anime Lora Flux": "fc-anime-lora-flux-fcanimeflux",
-    "Urban Collage Style Flux Dev": "urban-collage-style-flux-dev-lora-v1-0",
-    "Flux Krea Realism LoRA V1.0": "flux-krea-realism-lora-v1-0",
-    "Flux Dev to Schnell 4 Step": "flux-dev-to-schnell-4-step-lora-bf16",
-    "Flux Lora Collection Xlabs": "flux-lora-collection",
-    "UltraRealistic Lora Project": "ultrarealistic-lora-project", 
+    "Long Hair V2": "long-hair-lora-flux-v2",
+    "Uncensored": "specialized-for-unrestricted-detailed-generation",
+    "NSFW V2": "sldr_flux_nsfw_v2",
+    "Anime (FC Anime)": "fc-anime-lora-flux-fcanimeflux",
+    "Urban Collage Style": "urban-collage-style-flux-dev-lora-v1-0",
+    "Krea Realism V1.0": "flux-krea-realism-lora-v1-0",
+    "Dev→Schnell 4-Step": "flux-dev-to-schnell-4-step-lora-bf16",
+    "XLabs Collection": "flux-lora-collection",
+    "UltraRealistic": "ultrarealistic-lora-project",
+    "Super Realism": "flux-super-realism-lora",
+    "Cinematic Style V3": "cinematic-style-flux-v3",
 }
+
+# ---- Flux 2 (flux-2-dev) ---------------------------------------------------
+# Flux 2 uses the same lora_model API parameter but needs Flux-2-native LoRAs.
+# ModelsLab hosts flux-2-dev LoRAs alongside their model pages.
+FLUX2_LORAS = {
+    "Fluxgram V1.0 (Realism/Skin)": "fluxgram-v1-0",
+    "Middle Finger Flux2 V2.0": "middle-finger-flux-dev-lora-v2-0",
+    "Uncensored Flux2": "uncensored-flux-lora",
+    "XE GuoMan V0.2": "xe-guoman-lora-v0-2-flux",
+    "RD Pixel Art V2 Uncensored": "rd-pixel-art-lora-flux-v2-uncensored",
+    "Anime Art Style": "anime-art-stylelora",
+}
+
+# ---- Z-Image (z-image-base, z-image-turbo) ---------------------------------
+# Z-Image accepts HuggingFace repo IDs as lora_model values.
+ZIMAGE_LORAS = {
+    "Classic Painting (Old Masters)": "renderartist/Classic-Painting-Z-Image-Turbo-LoRA",
+    "Coloring Book Style": "renderartist/Coloring-Book-Z-Image-Turbo-LoRA",
+    "Children's Drawings": "ostris/z_image_turbo_childrens_drawings",
+    "Realism Boost": "suayptalha/Z-Image-Turbo-Realism-LoRA",
+    "Historic Color (Early 1900s)": "AlekseyCalvin/HistoricColor_Z-image-Turbo-LoRA",
+}
+
+# Legacy alias kept for backward compat
+FLUXDEV_LORAS = FLUX1_LORAS
+
+# Map model_id → which LoRA catalog to use
+MODEL_LORA_CATALOG: dict = {
+    "flux": FLUX1_LORAS,
+    "fluxdev": FLUX1_LORAS,
+    "flux-klein": FLUX1_LORAS,
+    "flux-2-dev": FLUX2_LORAS,
+    "z-image-base": ZIMAGE_LORAS,
+    "z-image-turbo": ZIMAGE_LORAS,
+}
+
+def get_lora_catalog(model_id: str) -> dict:
+    """Return the appropriate LoRA catalog for a given model."""
+    return MODEL_LORA_CATALOG.get(model_id, {})
 
 
 # ============================================================================
@@ -266,6 +412,7 @@ MODEL_CONFIGS = {
     },
     # === V7 Models ===
     "grok-imagine-image-t2i": {
+        "num_inference_steps": 25,
         "api_version": "v7",
         "endpoint_txt2img": Endpoint.TXT2IMG_V7,  # V7 has separate URL
         "supports_txt2img": True,
@@ -273,6 +420,8 @@ MODEL_CONFIGS = {
         "init_image_as_list": True,
     },
     "grok-imagine-image-i2i": {
+        "num_inference_steps": 25,
+        "strength": 0.7,
         "api_version": "v7",
         "endpoint_img2img": Endpoint.IMG2IMG_V7,
         "supports_txt2img": False,
@@ -280,6 +429,8 @@ MODEL_CONFIGS = {
         "init_image_as_list": True,
     },
     "seedream-4.0-i2i": {
+        "num_inference_steps": 25,
+        "strength": 0.7,
         "api_version": "v7",
         "endpoint_img2img": Endpoint.IMG2IMG_V7,
         "supports_txt2img": False,
@@ -287,6 +438,8 @@ MODEL_CONFIGS = {
         "init_image_as_list": True,
     },
     "gen4_image_turbo": {
+        "num_inference_steps": 20,
+        "strength": 0.7,
         "api_version": "v7",
         "endpoint_img2img": Endpoint.IMG2IMG_V7,
         "supports_txt2img": False,
@@ -294,6 +447,8 @@ MODEL_CONFIGS = {
         "init_image_as_list": True,
     },
     "flux-2-pro": {
+        "num_inference_steps": 28,
+        "strength": 0.7,
         "api_version": "v7",
         "endpoint_img2img": Endpoint.IMG2IMG_V7,
         "supports_txt2img": False,
@@ -301,6 +456,8 @@ MODEL_CONFIGS = {
         "init_image_as_list": True,
     },
     "nano-banana": {
+        "num_inference_steps": 20,
+        "strength": 0.7,
         "api_version": "v7",
         "endpoint_img2img": Endpoint.IMG2IMG_V7,
         "supports_txt2img": False,
@@ -309,6 +466,8 @@ MODEL_CONFIGS = {
     },
     # === WAN 2.7 Models ===
     "wan-2.7-i2i": {
+        "num_inference_steps": 25,
+        "strength": 0.7,
         "api_version": "v7",
         "endpoint_img2img": Endpoint.IMG2IMG_V7,
         "supports_txt2img": False,
@@ -316,6 +475,7 @@ MODEL_CONFIGS = {
         "init_image_as_list": True,
     },
     "wan-2.7-t2i": {
+        "num_inference_steps": 25,
         "api_version": "v7",
         "endpoint_txt2img": Endpoint.TXT2IMG_V7,
         "supports_txt2img": True,
@@ -873,22 +1033,29 @@ class PayloadBuilder:
         prompt: str,
         images: List[str],
         model_id: str = "seedream-4.0-i2i",
-        aspect_ratio: Optional[str] = None,
-        resolution: Optional[str] = None,
+        # V7 img2img supports the SAME parameters as standard img2img
+        width: Optional[int] = None,
+        height: Optional[int] = None,
         seed: Optional[int] = None,
+        negative_prompt: Optional[str] = None,
+        num_inference_steps: Optional[int] = None,
+        guidance_scale: Optional[float] = None,
+        strength: Optional[float] = None,
+        samples: Optional[int] = None,
+        safety_checker: Optional[str] = "no",
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Build MINIMAL payload for v7 img2img endpoint.
+        Build payload for v7 img2img endpoint.
         
-        V7 uses aspect_ratio and resolution instead of width/height.
-        init_image can be a list.
+        V7 /api/v7/images/image-to-image requires image URLs (not base64).
+        Accepts standard img2img parameters: width, height, strength,
+        guidance_scale, num_inference_steps, negative_prompt, samples, etc.
+        
+        init_image can be a URL string or list of URL strings.
         """
-        # For v7, init_image can be a list
+        # For v7, init_image can be a list of URLs
         init_image = images if len(images) > 1 else images[0] if images else None
-
-        # Detect if any image is base64 (not a URL)
-        has_base64 = any(not is_url(img) for img in images) if images else False
 
         # Minimum required payload
         payload = {
@@ -896,19 +1063,18 @@ class PayloadBuilder:
             "prompt": prompt,
             "model_id": model_id,
             "init_image": init_image,
-            "safety_checker": "no",
         }
-
-        if has_base64:
-            payload["base64"] = "yes"
         
-        # Add optional parameters
-        if aspect_ratio:
-            valid_ratios = ["1:1", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9", "9:21"]
-            payload["aspect_ratio"] = aspect_ratio if aspect_ratio in valid_ratios else "1:1"
-        
-        self._add_if_set(payload, "resolution", resolution)
+        # Add optional parameters — same as standard img2img
+        self._add_if_set(payload, "width", width)
+        self._add_if_set(payload, "height", height)
         self._add_if_set(payload, "seed", seed)
+        self._add_if_set(payload, "negative_prompt", negative_prompt)
+        self._add_if_set(payload, "num_inference_steps", num_inference_steps, stringify=True)
+        self._add_if_set(payload, "guidance_scale", guidance_scale, stringify=True)
+        self._add_if_set(payload, "strength", strength, stringify=True)
+        self._add_if_set(payload, "samples", samples, stringify=True)
+        self._add_if_set(payload, "safety_checker", safety_checker)
         
         # Add any extra kwargs
         payload.update(kwargs)
@@ -918,13 +1084,23 @@ class PayloadBuilder:
         self,
         prompt: str,
         model_id: str = "grok-imagine-image-t2i",
-        aspect_ratio: Optional[str] = None,
-        resolution: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
         seed: Optional[int] = None,
+        negative_prompt: Optional[str] = None,
+        num_inference_steps: Optional[int] = None,
+        guidance_scale: Optional[float] = None,
+        samples: Optional[int] = None,
+        safety_checker: Optional[str] = None,
+        enhance_prompt: Optional[str] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Build MINIMAL payload for v7 txt2img endpoint.
+        Build payload for v7 txt2img endpoint.
+        
+        V7 /api/v7/images/text-to-image accepts the same core parameters
+        as standard txt2img: width, height, guidance_scale,
+        num_inference_steps, negative_prompt, samples, etc.
         """
         # Minimum required payload
         payload = {
@@ -933,13 +1109,16 @@ class PayloadBuilder:
             "model_id": model_id,
         }
         
-        # Add optional parameters
-        if aspect_ratio:
-            valid_ratios = ["1:1", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9", "9:21"]
-            payload["aspect_ratio"] = aspect_ratio if aspect_ratio in valid_ratios else "1:1"
-        
-        self._add_if_set(payload, "resolution", resolution)
+        # Add optional parameters — same as standard txt2img
+        self._add_if_set(payload, "width", width)
+        self._add_if_set(payload, "height", height)
         self._add_if_set(payload, "seed", seed)
+        self._add_if_set(payload, "negative_prompt", negative_prompt)
+        self._add_if_set(payload, "num_inference_steps", num_inference_steps, stringify=True)
+        self._add_if_set(payload, "guidance_scale", guidance_scale, stringify=True)
+        self._add_if_set(payload, "samples", samples, stringify=True)
+        self._add_if_set(payload, "safety_checker", safety_checker)
+        self._add_if_set(payload, "enhance_prompt", enhance_prompt)
         
         # Add any extra kwargs  
         payload.update(kwargs)
@@ -1500,8 +1679,15 @@ class ModelsLabAPI:
         images: Union[str, List[str]],
         model_id: str = "seedream-4.0-i2i",
         aspect_ratio: Optional[str] = None,
-        resolution: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
         seed: Optional[int] = None,
+        negative_prompt: Optional[str] = None,
+        num_inference_steps: Optional[int] = None,
+        guidance_scale: Optional[float] = None,
+        strength: Optional[float] = None,
+        samples: Optional[int] = None,
+        resize_mp: Optional[float] = None,
         **kwargs
     ) -> APIResponse:
         """
@@ -1511,37 +1697,66 @@ class ModelsLabAPI:
             prompt: Transformation instructions
             images: Input images — URLs or base64 strings — can be single or list
             model_id: Model to use (seedream, gen4, flux-2-pro, wan-2.7-i2i, etc.)
-            aspect_ratio: Output aspect ratio (e.g., "1:1", "16:9")
-            resolution: Output resolution (e.g., "1k", "2k")
+            aspect_ratio: Output aspect ratio (e.g., "1:1", "16:9") — converted to width/height
+            width: Output width (overrides aspect_ratio)
+            height: Output height (overrides aspect_ratio)
             seed: Random seed (None = random)
+            negative_prompt: What to avoid in generation
+            num_inference_steps: Generation steps
+            guidance_scale: CFG scale
+            strength: How much to transform the input (0.0-1.0)
+            samples: Number of images to generate
+            resize_mp: Resize input to this megapixel size
             **kwargs: Additional API parameters
 
         Returns:
             APIResponse with request status
 
         Notes:
-            - V7 supports both public URLs and base64-encoded images
+            - V7 /api/v7/images/image-to-image uses the same parameters as standard img2img
+            - Supports both public URLs and base64-encoded images
             - base64 flag is added automatically when non-URL images are detected
             - init_image can be a list
         """
         if isinstance(images, str):
             images = [images]
 
-        # V7 requires raw base64 (no data URI prefix)
-        prepared_images = []
+        # Determine dimensions from aspect_ratio if width/height not given
+        w, h = None, None
+        if width is not None and height is not None:
+            w, h = width, height
+        elif aspect_ratio:
+            w, h = self._get_dimensions(None, aspect_ratio, V7_SIZE_DICT)
+            self._log(f"V7 img2img: aspect ratio {aspect_ratio} → {w}x{h}")
+
+        # Get model config for defaults
+        config = get_model_config(model_id)
+        if num_inference_steps is None:
+            num_inference_steps = config.get("num_inference_steps")
+        if strength is None:
+            strength = config.get("strength")
+
+        # V7 REQUIRES URLs — validate all images are URLs
         for img in images:
-            if is_base64(img) and img.startswith("data:"):
-                # Strip "data:image/xxx;base64," prefix
-                img = img.split(",", 1)[1]
-            prepared_images.append(img)
+            if not is_url(img):
+                raise ValueError(
+                    f"V7 img2img requires image URLs, not base64 data. "
+                    f"Upload images to imgBB or use public URLs. "
+                    f"Got: {img[:80]}..."
+                )
 
         payload = self.payload_builder.build_img2img_v7_payload(
             prompt=prompt,
-            images=prepared_images,
+            images=images,
             model_id=model_id,
-            aspect_ratio=aspect_ratio,
-            resolution=resolution,
+            width=w,
+            height=h,
             seed=seed,
+            negative_prompt=negative_prompt,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            strength=strength,
+            samples=samples,
             **kwargs
         )
 
@@ -1558,8 +1773,14 @@ class ModelsLabAPI:
         prompt: str,
         model_id: str = "grok-imagine-image-t2i",
         aspect_ratio: Optional[str] = None,
-        resolution: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
         seed: Optional[int] = None,
+        negative_prompt: Optional[str] = None,
+        num_inference_steps: Optional[int] = None,
+        guidance_scale: Optional[float] = None,
+        samples: Optional[int] = None,
+        enhance_prompt: Optional[str] = None,
         **kwargs
     ) -> APIResponse:
         """
@@ -1567,21 +1788,45 @@ class ModelsLabAPI:
         
         Args:
             prompt: Text description of desired image
-            model_id: Model to use (e.g., "grok-imagine-image-t2i")
-            aspect_ratio: Output aspect ratio (e.g., "1:1", "16:9")
-            resolution: Output resolution (e.g., "1k", "2k")
+            model_id: Model to use (e.g., "grok-imagine-image-t2i", "wan-2.7-t2i")
+            aspect_ratio: Output aspect ratio — converted to width/height
+            width: Output width (overrides aspect_ratio)
+            height: Output height (overrides aspect_ratio)
             seed: Random seed (None = random)
+            negative_prompt: What to avoid in generation
+            num_inference_steps: Generation steps
+            guidance_scale: CFG scale
+            samples: Number of images to generate
+            enhance_prompt: Whether to enhance prompt ("yes"/"no")
             **kwargs: Additional API parameters
         
         Returns:
             APIResponse with request status
         """
+        # Determine dimensions from aspect_ratio if width/height not given
+        w, h = None, None
+        if width is not None and height is not None:
+            w, h = width, height
+        elif aspect_ratio:
+            w, h = self._get_dimensions(None, aspect_ratio, V7_SIZE_DICT)
+            self._log(f"V7 txt2img: aspect ratio {aspect_ratio} → {w}x{h}")
+
+        # Get model config for defaults
+        config = get_model_config(model_id)
+        if num_inference_steps is None:
+            num_inference_steps = config.get("num_inference_steps")
+
         payload = self.payload_builder.build_txt2img_v7_payload(
             prompt=prompt,
             model_id=model_id,
-            aspect_ratio=aspect_ratio,
-            resolution=resolution,
+            width=w,
+            height=h,
             seed=seed,
+            negative_prompt=negative_prompt,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            samples=samples,
+            enhance_prompt=enhance_prompt,
             **kwargs
         )
         

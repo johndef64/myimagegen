@@ -48,9 +48,18 @@ from modelslab.modelslab_api import (
     Endpoint,
     MODEL_CONFIGS,
     SIZE_IMAGE_DICT,
+    SIZE_IMAGE_TIERS,
     QWEN_SIZE_DICT,
+    QWEN_SIZE_TIERS,
+    V7_SIZE_DICT,
+    V7_SIZE_TIERS,
     SCHEDULER_LIST,
     FLUXDEV_LORAS,
+    FLUX1_LORAS,
+    FLUX2_LORAS,
+    ZIMAGE_LORAS,
+    MODEL_LORA_CATALOG,
+    get_lora_catalog,
     get_model_config,
     model_supports_txt2img,
     model_supports_img2img,
@@ -72,7 +81,7 @@ st.set_page_config(
 DEFAULT_MODEL_BY_MODE = {
     "Text to Image": "flux-2-dev",
     "Image to Image": "flux-2-dev",
-    "Qwen Edit": "qwen-edit",
+    "Qwen Edit": "qwen-edit-2511",   # 2511 is the newer, better model
     "V7 img2img": "wan-2.7-i2i",
 }
 
@@ -130,9 +139,33 @@ def build_aspect_ratio_map(size_dict: Dict[str, tuple]) -> Dict[str, str]:
     }
 
 
-def get_aspect_ratio_options(model_id: Optional[str]) -> Dict[str, str]:
-    size_dict = QWEN_SIZE_DICT if is_qwen_edit_model(model_id) else SIZE_IMAGE_DICT
+def is_v7_model(model_id: Optional[str]) -> bool:
+    if not model_id:
+        return False
+    config = get_model_config(model_id)
+    return config.get("api_version") == "v7"
+
+
+def get_aspect_ratio_options(model_id: Optional[str], resolution_tier: str = "") -> Dict[str, str]:
+    if is_qwen_edit_model(model_id):
+        tiers = QWEN_SIZE_TIERS
+    elif is_v7_model(model_id):
+        tiers = V7_SIZE_TIERS
+    else:
+        tiers = SIZE_IMAGE_TIERS
+    # Pick the requested tier, fall back to first available
+    size_dict = tiers.get(resolution_tier) or next(iter(tiers.values()))
     return build_aspect_ratio_map(size_dict)
+
+
+def get_resolution_tiers(model_id: Optional[str]) -> Dict[str, Dict]:
+    """Return the right tier dict for the given model."""
+    if is_qwen_edit_model(model_id):
+        return QWEN_SIZE_TIERS
+    elif is_v7_model(model_id):
+        return V7_SIZE_TIERS
+    else:
+        return SIZE_IMAGE_TIERS
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -320,8 +353,11 @@ def get_image_aspect_ratio(image: Image.Image) -> str:
     return closest_ratio[0]
 
 def resize_image_for_upload(image: Image.Image, max_size: int = 1024) -> Image.Image:
-    """Resize image maintaining aspect ratio"""
+    """Resize image maintaining aspect ratio. Only downsizes; never upsizes."""
     width, height = image.size
+    # Don't resize if already within bounds
+    if width <= max_size and height <= max_size:
+        return image
     if width > height:
         new_width = max_size
         new_height = int(height * (max_size / width))
@@ -637,20 +673,67 @@ def show_modelslab_generator_page():
             help="Choose the image generation model"
         )
         
-        # LoRA selection (for flux models)
+        # LoRA selection — available for flux 1.x, flux 2 and z-image models
         use_lora = False
         lora_model = None
         lora_strength = 0.8
-        
-        if "flux" in selected_model.lower() and generation_mode != "Qwen Edit":
+        lora_strength_2 = 0.8
+        lora_model_2 = None
+
+        _lora_catalog = get_lora_catalog(selected_model)
+        _lora_supported = bool(_lora_catalog) and generation_mode != "Qwen Edit"
+
+        if _lora_supported:
             st.subheader("LoRA Settings")
-            use_lora = st.checkbox("Use LoRA", value=False)
+
+            # Explain which family this catalog belongs to
+            if selected_model == "flux-2-dev":
+                st.caption("🟣 Flux **2** LoRAs — incompatible with Flux 1.x")
+            elif selected_model in ("flux", "fluxdev", "flux-klein"):
+                st.caption("🔵 Flux **1.x** LoRAs — incompatible with Flux 2")
+            elif "z-image" in selected_model:
+                st.caption("🟢 Z-Image LoRAs (HuggingFace repo IDs)")
+
+            use_lora = st.checkbox("Use LoRA", value=False, key="use_lora_chk")
             if use_lora:
-                lora_options = list(FLUXDEV_LORAS.keys())
-                selected_lora = st.selectbox("LoRA Model", options=lora_options)
-                lora_model = FLUXDEV_LORAS[selected_lora]
-                lora_strength = st.slider("LoRA Strength", 0.0, 1.0, 0.8, 0.1)
-        
+                lora_options = list(_lora_catalog.keys())
+
+                # Primary LoRA
+                selected_lora_label = st.selectbox(
+                    "LoRA Model #1", options=lora_options, key="lora_sel_1"
+                )
+                lora_model = _lora_catalog[selected_lora_label]
+                lora_strength = st.slider(
+                    "Strength #1", 0.0, 1.0, 0.8, 0.05, key="lora_str_1"
+                )
+
+                # Optional second LoRA
+                use_lora_2 = st.checkbox("Add second LoRA", value=False, key="use_lora2_chk")
+                if use_lora_2:
+                    selected_lora_label_2 = st.selectbox(
+                        "LoRA Model #2", options=lora_options, key="lora_sel_2"
+                    )
+                    lora_model_2 = _lora_catalog[selected_lora_label_2]
+                    lora_strength_2 = st.slider(
+                        "Strength #2", 0.0, 1.0, 0.8, 0.05, key="lora_str_2"
+                    )
+
+                # Custom LoRA ID override (advanced)
+                with st.expander("Custom LoRA ID (advanced)"):
+                    custom_lora = st.text_input(
+                        "Custom lora_model ID", value="",
+                        placeholder="e.g. my-custom-lora-id or HF/repo-name",
+                        help="Overrides LoRA #1 selection. Use the exact ModelsLab model ID or HF repo."
+                    )
+                    if custom_lora.strip():
+                        lora_model = custom_lora.strip()
+
+                # Combine into comma-separated strings if multi-LoRA
+                if lora_model_2:
+                    lora_model = f"{lora_model},{lora_model_2}"
+                    lora_strength = f"{lora_strength},{lora_strength_2}"
+
+
         # Aspect ratio
         st.subheader("Output Settings")
         
@@ -661,7 +744,27 @@ def show_modelslab_generator_page():
             help="Automatically use the aspect ratio of the first reference image"
         )
         
-        aspect_options = get_aspect_ratio_options(selected_model)
+        # Resolution tier selector
+        resolution_tiers = get_resolution_tiers(selected_model)
+        tier_labels = list(resolution_tiers.keys())
+
+        # V7 has only one tier — hide the selector
+        if len(tier_labels) > 1:
+            resolution_tier = st.selectbox(
+                "Resolution",
+                options=tier_labels,
+                index=0,
+                help=(
+                    "Higher resolution = better detail but slower & more expensive.\n"
+                    "v6: up to 1500 px/side (~1.7 MP max) | Qwen: up to ~7 MP | V7: max 1024 px/side"
+                ),
+                key="resolution_tier_select"
+            )
+        else:
+            resolution_tier = tier_labels[0]
+            st.caption(f"🖼️ {resolution_tier}")
+
+        aspect_options = get_aspect_ratio_options(selected_model, resolution_tier)
         aspect_ratio_display = st.selectbox(
             "Aspect Ratio",
             options=list(aspect_options.keys()),
@@ -720,7 +823,7 @@ def show_modelslab_generator_page():
                 help="How closely to follow the prompt"
             )
             
-            if generation_mode == "Image to Image":
+            if generation_mode in ("Image to Image", "V7 img2img"):
                 strength = st.slider(
                     "Transformation Strength",
                     min_value=0.1,
@@ -1029,6 +1132,24 @@ def show_modelslab_generator_page():
             )
         
 
+        # Negative Prompt (not supported by Qwen Edit)
+        negative_prompt = None
+        if generation_mode != "Qwen Edit":
+            DEFAULT_NEGATIVE_PROMPT = (
+                "ugly, deformed, disfigured, blurry, low quality, low resolution, "
+                "bad anatomy, bad hands, extra fingers, missing fingers, watermark, "
+                "text, logo, signature, jpeg artifacts, noise, overexposed, underexposed"
+            )
+            negative_prompt_value = st.text_area(
+                "🚫 Negative Prompt",
+                value=DEFAULT_NEGATIVE_PROMPT,
+                height=80,
+                key="negative_prompt_input",
+                help="Describe what you want to AVOID in the generated image. Not supported by Qwen Edit."
+            )
+            # Pass None to API if the user cleared the field
+            negative_prompt = negative_prompt_value.strip() if negative_prompt_value and negative_prompt_value.strip() else None
+
         # Reference images upload (for img2img modes)
         reference_images = None
         v7_url_images = None  # Only used in V7 img2img URL mode
@@ -1101,11 +1222,15 @@ def show_modelslab_generator_page():
                                 from imgbb_upload import upload_base64_to_imgbb
                                 uploaded_urls = []
                                 for idx, pil_img in enumerate(reference_images):
+                                    # Upload at ORIGINAL resolution — no resize
                                     buf = BytesIO()
                                     pil_img.save(buf, format="PNG")
                                     b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
                                     info = upload_base64_to_imgbb(b64, name=f"ref_{idx}", expiration=120)
-                                    uploaded_urls.append(info["display_url"])
+                                    # Use "url" for full resolution; "display_url" may be a thumbnail
+                                    full_url = info.get("url") or info.get("image", {}).get("url") or info.get("display_url")
+                                    uploaded_urls.append(full_url)
+                                    st.caption(f"Uploaded ref_{idx}: {pil_img.size[0]}×{pil_img.size[1]}")
                                 st.session_state.imgbb_urls = uploaded_urls
                                 st.session_state.imgbb_file_key = current_file_key
                             except Exception as e:
@@ -1217,17 +1342,52 @@ def show_modelslab_generator_page():
                         # Prepare images for API
                         image_data = None
                         if v7_url_images:
-                            # V7 URL mode: pass URLs directly (no base64)
+                            # V7 URL mode or imgBB URLs: pass URLs directly
                             image_data = v7_url_images
                         elif reference_images:
-                            # Resize and encode to base64
-                            resized_imgs = [resize_image_for_upload(img, max_image_size) for img in reference_images]
-                            image_data = [encode_pil_to_base64(img) for img in resized_imgs]
+                            if generation_mode == "V7 img2img":
+                                # V7 REQUIRES URLs — must upload to imgBB first
+                                # If we got here, imgBB upload didn't happen or failed
+                                try:
+                                    import sys as _sys
+                                    _sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
+                                    from imgbb_upload import upload_base64_to_imgbb
+                                    uploaded_urls = []
+                                    for idx, pil_img in enumerate(reference_images):
+                                        buf = BytesIO()
+                                        pil_img.save(buf, format="PNG")
+                                        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                                        info = upload_base64_to_imgbb(b64, name=f"ref_{idx}", expiration=120)
+                                        full_url = info.get("url") or info.get("image", {}).get("url") or info.get("display_url")
+                                        uploaded_urls.append(full_url)
+                                    image_data = uploaded_urls
+                                    st.session_state.imgbb_urls = uploaded_urls
+                                except Exception as e:
+                                    st.error(f"❌ V7 requires image URLs. imgBB upload failed: {e}\nUse 'Paste URL' mode or fix imgBB config.")
+                                    st.stop()
+                            else:
+                                # Standard modes: resize and encode to base64
+                                resized_imgs = [resize_image_for_upload(img, max_image_size) for img in reference_images]
+                                image_data = [encode_pil_to_base64(img) for img in resized_imgs]
 
                         images_payload = image_data if image_data else None
 
+                        # Resolve width/height from the selected resolution tier + aspect ratio.
+                        # We pass explicit width/height so the API always uses the right
+                        # resolution regardless of the tier — instead of relying on the API's
+                        # internal default dict.
+                        _tier_dict = resolution_tiers.get(resolution_tier) or next(iter(resolution_tiers.values()))
+                        if use_auto_aspect and reference_images:
+                            # Auto mode: map the detected ratio to the chosen tier dict;
+                            # if the ratio isn't in the tier dict, fall back to the first entry.
+                            _dims = _tier_dict.get(actual_aspect_ratio) or next(iter(_tier_dict.values()))
+                        else:
+                            _dims = _tier_dict.get(actual_aspect_ratio) or next(iter(_tier_dict.values()))
+                        _out_width, _out_height = _dims
+
                         generation_kwargs: Dict[str, Any] = {
-                            "aspect_ratio": actual_aspect_ratio,
+                            "width": _out_width,
+                            "height": _out_height,
                             "seed": seed,
                         }
 
@@ -1238,6 +1398,7 @@ def show_modelslab_generator_page():
                                 "scheduler": scheduler,
                                 "lora_model": lora_model if use_lora else None,
                                 "lora_strength": lora_strength if use_lora else None,
+                                "negative_prompt": negative_prompt,
                                 # "resolution": "1.3K"
                             })
                         elif generation_mode == "Image to Image":
@@ -1249,41 +1410,36 @@ def show_modelslab_generator_page():
                                 "resize_mp": resize_mp,
                                 "lora_model": lora_model if use_lora else None,
                                 "lora_strength": lora_strength if use_lora else None,
+                                "negative_prompt": negative_prompt,
                             })
       
                         elif generation_mode == "Qwen Edit":
                             generation_kwargs.update({
                                 "resize_mp": resize_mp,
                                 "num_inference_steps": num_inference_steps,
+                                # negative_prompt NOT supported by qwen_edit endpoint
                             })
                         else:  # V7 img2img
-                            pass  # V7 uses only aspect_ratio and seed (already in generation_kwargs)
+                            generation_kwargs.update({
+                                "num_inference_steps": num_inference_steps,
+                                "guidance_scale": guidance_scale,
+                                "strength": strength,
+                                "negative_prompt": negative_prompt,
+                            })
 
                         if selected_model == "flux-2-dev":
-                            print(f"Using flux-2-dev specific parameters: strength = {strength}")
+                            print(f"Using flux-2-dev specific parameters: strength = {strength}, size = {_out_width}×{_out_height}")
                             generation_kwargs = {
-                                "aspect_ratio": actual_aspect_ratio,
+                                "width": _out_width,
+                                "height": _out_height,
                                 "seed": seed,
                                 # "guidance_scale": guidance_scale,
                                 # "scheduler": scheduler,
                                 "strength": strength,
-                                # "lora_model": lora_model if use_lora else None,
-                                # "lora_strength": lora_strength if use_lora else None,
+                                "negative_prompt": negative_prompt,
+                                "lora_model": lora_model if use_lora else None,
+                                "lora_strength": lora_strength if use_lora else None,
                             }
-                            #  param flux-2-dev      {
-                            #     "key": "...",
-                            #     "deploy_type": "flux_2_dev",
-                            #     "prompt": "...",
-                            #     "negative_prompt": "...",
-                            #     "init_image": ["url_immagine"],
-                            #     "width": "1024",
-                            #     "height": "1024",
-                            #     "samples": "1",
-                            #     "strength": 0.7,  # ← questo è l'unico param di controllo img2img confermato
-                            #     "seed": null,
-                            #     "webhook": null,
-                            #     "track_id": null
-                            # }
 
                         response = api.generate(
                             prompt=prompt,
