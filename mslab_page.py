@@ -704,7 +704,7 @@ def show_modelslab_generator_page():
             # )
 
         if _lora_supported:
-            st.subheader("LoRA Settings")
+            st.subheader("Control Settings")
 
             # Explain which family this catalog belongs to
             if selected_model == "flux-2-dev":
@@ -762,6 +762,11 @@ def show_modelslab_generator_page():
                     lora_model = f"{lora_model},{lora_model_2}"
                     lora_strength = f"{lora_strength},{lora_strength_2}"
 
+            enhance_prompt = st.checkbox(
+                "Enhance prompt",
+                value=False,
+                help="Use LLM to expand and enhance your prompt for better results"
+            )
 
         # Aspect ratio
         st.subheader("Output Settings")
@@ -1445,7 +1450,8 @@ def show_modelslab_generator_page():
                                 "lora_model": lora_model if use_lora else None,
                                 "lora_strength": lora_strength if use_lora else None,
                                 "negative_prompt": negative_prompt,
-                                # "resolution": "1.3K"
+                                "enhance_prompt": enhance_prompt,
+                                # #"resolution": "1.3K"
                             })
                         elif generation_mode == "Image to Image":
                             if _is_v7:
@@ -1467,6 +1473,7 @@ def show_modelslab_generator_page():
                                     "lora_model": lora_model if use_lora else None,
                                     "lora_strength": lora_strength if use_lora else None,
                                     "negative_prompt": negative_prompt,
+                                    "enhance_prompt": enhance_prompt,
                                 })
       
                         elif generation_mode == "Qwen Edit":
