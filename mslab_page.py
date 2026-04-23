@@ -70,6 +70,8 @@ from modelslab.modelslab_api import (
     decode_base64_to_image
 )
 
+from src.prompt_enhancer import render_prompt_enhancer
+
 # Page configuration
 st.set_page_config(
     page_title="ModelsLab Image Generator",
@@ -762,11 +764,12 @@ def show_modelslab_generator_page():
                     lora_model = f"{lora_model},{lora_model_2}"
                     lora_strength = f"{lora_strength},{lora_strength_2}"
 
-            enhance_prompt = st.checkbox(
-                "Enhance prompt",
-                value=False,
-                help="Use LLM to expand and enhance your prompt for better results"
-            )
+        enhance_prompt = st.checkbox(
+            "Enhance MSLab prompt",
+            value=False,
+            help="Use LLM to expand and enhance your prompt for better results"
+        )
+
 
         # Aspect ratio
         st.subheader("Output Settings")
@@ -1171,7 +1174,9 @@ def show_modelslab_generator_page():
                 help="Enter a detailed description of the image you want to create",
                 key="custom_prompt"
             )
-        
+
+        prompt = render_prompt_enhancer(prompt, session_key="mslab_llm_enhanced_prompt")
+
 
         # Negative Prompt (not supported by Qwen Edit; ignored by Flux/Z-Image architecture)
         negative_prompt = None
@@ -1462,6 +1467,8 @@ def show_modelslab_generator_page():
                                     "strength": strength,
                                     "negative_prompt": negative_prompt,
                                 })
+                                # remove enhence_prompt for V7 img2img — not supported by the endpoint
+                                # generation_kwargs.pop("enhance_prompt", None)
                             else:
                                 # Standard V6 img2img
                                 generation_kwargs.update({

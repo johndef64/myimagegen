@@ -11,6 +11,8 @@ import json
 from tomlkit import key
 import yaml
 
+from src.prompt_enhancer import render_prompt_enhancer
+
 # Page configuration
 st.set_page_config(
     page_title="Image Tools App",
@@ -876,7 +878,9 @@ with col1:
             help="Enter a detailed description of the image you want to create",
             key="custom_prompt"
         )
-    
+
+    prompt = render_prompt_enhancer(prompt, session_key="app_llm_enhanced_prompt")
+
     # Reference images upload
     st.subheader("Reference Images (Optional)")
     uploaded_files = st.file_uploader(

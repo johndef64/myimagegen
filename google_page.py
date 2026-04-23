@@ -12,6 +12,8 @@ import yaml
 from google import genai
 from google.genai import types
 
+from src.prompt_enhancer import render_prompt_enhancer
+
 # Page configuration (only used when running standalone)
 if __name__ == "__main__" or "google_page" not in str(st.session_state.get("_page_loaded", "")):
     try:
@@ -1114,6 +1116,8 @@ def show_google_generator_page():
                 help="Enter a detailed description of the image you want to create",
                 key="google_custom_prompt"
             )
+
+        prompt = render_prompt_enhancer(prompt, session_key="google_llm_enhanced_prompt")
 
         # Reference images upload
         st.subheader("Reference Images (Optional)")
