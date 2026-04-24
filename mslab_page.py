@@ -84,12 +84,6 @@ st.set_page_config(
 # MODEL HELPERS
 # ============================================================================
 
-DEFAULT_MODEL_BY_MODE = {
-    "Text to Image": "flux-2-dev",
-    "Image to Image": "flux-2-dev",
-    "Qwen Edit": "qwen-edit-2511",   # 2511 is the newer, better model
-}
-
 def is_qwen_edit_model(model_id: Optional[str]) -> bool:
     if not model_id:
         return False
@@ -97,25 +91,27 @@ def is_qwen_edit_model(model_id: Optional[str]) -> bool:
     return config.get("endpoint_img2img") == Endpoint.QWEN_EDIT
 
 
-def get_models_for_mode(mode: str) -> List[str]:
+def get_all_models() -> List[str]:
+    """All models available. Generation mode (txt2img / img2img / qwen_edit)
+    is auto-derived at runtime from model capabilities + presence of refs."""
     models: List[str] = []
     for model_id in MODEL_CONFIGS.keys():
-        config = get_model_config(model_id)
-        endpoint_img = config.get("endpoint_img2img", Endpoint.IMG2IMG)
-        if mode == "Text to Image":
-            if model_supports_txt2img(model_id):
-                models.append(model_id)
-        elif mode == "Image to Image":
-            if not model_supports_img2img(model_id):
-                continue
-            # Include V6 img2img AND V7 img2img models, exclude Qwen Edit
-            if endpoint_img == Endpoint.QWEN_EDIT:
-                continue
+        if model_supports_txt2img(model_id) or model_supports_img2img(model_id):
             models.append(model_id)
-        elif mode == "Qwen Edit":
-            if endpoint_img == Endpoint.QWEN_EDIT:
-                models.append(model_id)
     return sorted(models)
+
+
+def derive_generation_mode(selected_model: str, has_reference: bool) -> str:
+    """Auto-derive mode:
+    - Qwen Edit: qwen-edit model + ref loaded
+    - Image to Image: any model + ref loaded
+    - Text to Image: no ref
+    """
+    if has_reference:
+        if is_qwen_edit_model(selected_model):
+            return "Qwen Edit"
+        return "Image to Image"
+    return "Text to Image"
 
 
 def format_model_option(model_id: str) -> str:
@@ -656,36 +652,30 @@ def show_modelslab_generator_page():
             st.session_state.mslab_api = None  # Reset API instance
         
         st.divider()
-        
-        # Generation Mode
-        st.subheader("Generation Mode")
-        generation_mode = st.radio(
-            "Mode",
-            ["Text to Image", "Image to Image", "Qwen Edit"],
-            horizontal=True,
-            help="Choose generation mode. V7 models (seedream, gen4, etc.) are available in Image to Image."
-        )
-        
-        st.divider()
-        
-        # Model selection based on mode
+
+        # Model selection (generation mode auto-derived from model + refs)
         st.subheader("Model Settings")
-        
-        available_models = get_models_for_mode(generation_mode)
+
+        available_models = get_all_models()
         if not available_models:
-            st.error("No models available for this mode. Please update MODEL_CONFIGS.")
+            st.error("No models available. Please update MODEL_CONFIGS.")
             st.stop()
-        default_model = DEFAULT_MODEL_BY_MODE.get(generation_mode, available_models[1])
-        if default_model not in available_models:
-            default_model = available_models[0]
-        
+        default_model = "flux-2-dev" if "flux-2-dev" in available_models else available_models[0]
+
         selected_model = st.selectbox(
             "Model",
             options=available_models,
             index=available_models.index(default_model),
             format_func=format_model_option,
-            help="Choose the image generation model"
+            help="Generation mode auto-derived: refs loaded → img2img; qwen-edit model + refs → Qwen Edit; no refs → txt2img."
         )
+
+        # Auto-derive generation mode from model + reference state.
+        # Refs come from file_uploader (session_state), V7 URL paste, or cached imgBB URLs.
+        _ref_files = st.session_state.get("mslab_ref_uploader") or []
+        _has_ref = bool(_ref_files) or bool(st.session_state.get("imgbb_urls"))
+        generation_mode = derive_generation_mode(selected_model, _has_ref)
+        st.caption(f"🔀 Mode: **{generation_mode}** (auto)")
         
         # LoRA selection — available for flux 1.x, flux 2 and z-image models
         use_lora = False
@@ -1096,7 +1086,7 @@ def show_modelslab_generator_page():
                         if isinstance(sublevel_data, dict):
                             # Handle 4th level: flatten it
                             prompts_list = []
-                            for sub_key, sub_val in sublevel_data.items():
+                            for _, sub_val in sublevel_data.items():
                                 if isinstance(sub_val, list):
                                     for p in sub_val:
                                         if isinstance(p, str) and not p.strip().startswith('#'):
@@ -1206,11 +1196,12 @@ def show_modelslab_generator_page():
                 # Pass None to API if the user cleared the field
                 negative_prompt = negative_prompt_value.strip() if negative_prompt_value and negative_prompt_value.strip() else None
 
-        # Reference images upload (for img2img modes)
+        # Reference images upload — always shown; mode auto-derived from presence of refs.
+        st.subheader("Reference Images")
+        st.caption("Upload image → Image to Image. Upload image + select Qwen-Edit model → Qwen Edit. Leave empty → Text to Image.")
         reference_images = None
         v7_url_images = None  # Only used in V7 img2img URL mode
-        if generation_mode != "Text to Image":
-            st.subheader("Reference Images")
+        if True:
 
             # V7 models require URLs: offer both file upload and URL input
             _selected_is_v7 = is_v7_model(selected_model)
@@ -1240,7 +1231,8 @@ def show_modelslab_generator_page():
                     "Upload reference images",
                     type=["png", "jpg", "jpeg", "webp", "bmp"],
                     accept_multiple_files=True,
-                    help="Upload one or more reference images"
+                    help="Upload one or more reference images",
+                    key="mslab_ref_uploader"
                 )
 
                 if not uploaded_files:
