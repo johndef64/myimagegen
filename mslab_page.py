@@ -71,6 +71,7 @@ from modelslab.modelslab_api import (
 )
 
 from src.prompt_enhancer import render_prompt_enhancer
+from utils import render_image_selector
 
 # Page configuration
 st.set_page_config(
@@ -1259,6 +1260,17 @@ def show_modelslab_generator_page():
                             if not stealth_mode:
                                 st.image(img, caption=f"Ref {idx+1}", width=150)
                             st.caption(f"Size: {img.size[0]}×{img.size[1]}")
+
+                with st.expander("📂 Select from images folder", expanded=False):
+                    folder_imgs = render_image_selector(session_key="mslab_img_selector", stealth_mode=stealth_mode)
+                    if folder_imgs:
+                        max_refs = 4 if generation_mode == "Qwen Edit" else 99
+                        if reference_images:
+                            slots_left = max_refs - len(reference_images)
+                            reference_images = reference_images + folder_imgs[:slots_left]
+                        else:
+                            reference_images = folder_imgs[:max_refs]
+                        st.success(f"{len(folder_imgs)} image(s) from folder added as reference.")
 
                     # V7 models: auto-upload to imgBB as soon as files are loaded
                     if _selected_is_v7 and reference_images:

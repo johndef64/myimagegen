@@ -1,7 +1,174 @@
-from PIL import Image
+from PIL import Image, ImageOps
 import requests
 from io import BytesIO
 import os
+
+
+IMAGES_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "images")
+_IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
+
+
+def _scan_image_folder(root: str):
+    """Return list of (rel_path, abs_path) for all images under root, sorted."""
+    results = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames.sort()
+        for fname in sorted(filenames):
+            if os.path.splitext(fname)[1].lower() in _IMG_EXTS:
+                abs_path = os.path.join(dirpath, fname)
+                rel_path = os.path.relpath(abs_path, root)
+                results.append((rel_path, abs_path))
+    return results
+
+
+def render_image_selector(session_key: str = "img_selector", images_root: str = None, stealth_mode: bool = False):
+    """
+    Streamlit widget: two cascading selectboxes (folder → subfolder),
+    paged thumbnail grid, returns list[PIL.Image] or None.
+    """
+    import streamlit as st
+    from io import BytesIO as _BytesIO
+    import base64 as _b64
+
+    PAGE_SIZE = 18
+    COLS = 6
+    THUMB = 110
+
+    root = images_root or IMAGES_ROOT
+    if not os.path.isdir(root):
+        st.warning(f"Images folder not found: {root}")
+        return None
+
+    selected_key = f"{session_key}_selected"
+    page_key = f"{session_key}_page"
+    last_scan_key = f"{session_key}_last_scan"
+    if selected_key not in st.session_state:
+        st.session_state[selected_key] = []
+    if page_key not in st.session_state:
+        st.session_state[page_key] = 0
+
+    # --- cascading selectboxes: one per level, as deep as subfolders exist ---
+    scan_root = root
+    level = 0
+    labels = ["Folder", "Subfolder", "Sub-subfolder"] + [f"Level {i}" for i in range(4, 20)]
+
+    top_dirs = sorted(d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d)))
+    current_dirs = top_dirs
+    while current_dirs:
+        options = ["(here)"] + current_dirs
+        choice = st.selectbox(labels[level], options, key=f"{session_key}_lvl{level}")
+        if choice == "(here)":
+            break
+        scan_root = os.path.join(scan_root, choice)
+        level += 1
+        current_dirs = sorted(d for d in os.listdir(scan_root) if os.path.isdir(os.path.join(scan_root, d)))
+
+    # reset page when browsed folder changes
+    if st.session_state.get(last_scan_key) != scan_root:
+        st.session_state[page_key] = 0
+        st.session_state[last_scan_key] = scan_root
+
+    # collect images (non-recursive: current dir only)
+    all_images = sorted(
+        os.path.join(scan_root, f)
+        for f in os.listdir(scan_root)
+        if os.path.isfile(os.path.join(scan_root, f))
+        and os.path.splitext(f)[1].lower() in _IMG_EXTS
+    )
+
+    if not all_images:
+        st.info("No images in this folder.")
+    else:
+        total_pages = max(1, (len(all_images) + PAGE_SIZE - 1) // PAGE_SIZE)
+        page = min(st.session_state[page_key], total_pages - 1)
+        st.session_state[page_key] = page
+        page_images = all_images[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
+
+        n_sel = len(st.session_state[selected_key])
+        sel_label = f" · {n_sel} selected" if n_sel else ""
+        st.caption(f"{len(all_images)} images · page {page+1}/{total_pages}{sel_label}")
+
+        # pagination
+        pcols = st.columns([1, 4, 1])
+        with pcols[0]:
+            if st.button("◀", key=f"{session_key}_prev", disabled=page == 0, use_container_width=True):
+                st.session_state[page_key] -= 1
+                st.rerun()
+        with pcols[1]:
+            if total_pages > 1:
+                new_page = st.select_slider(
+                    " ", options=list(range(1, total_pages + 1)),
+                    value=page + 1, key=f"{session_key}_slider", label_visibility="collapsed"
+                )
+                if new_page - 1 != page:
+                    st.session_state[page_key] = new_page - 1
+                    st.rerun()
+        with pcols[2]:
+            if st.button("▶", key=f"{session_key}_next", disabled=page >= total_pages - 1, use_container_width=True):
+                st.session_state[page_key] += 1
+                st.rerun()
+
+        st.markdown(
+            "<style>div[data-testid='stButton']>button{min-height:0;padding:2px 4px;font-size:13px;}</style>",
+            unsafe_allow_html=True,
+        )
+
+        rows = [page_images[i:i+COLS] for i in range(0, len(page_images), COLS)]
+        for row in rows:
+            cols = st.columns(COLS)
+            for col, abs_path in zip(cols, row):
+                with col:
+                    try:
+                        thumb = Image.open(abs_path)
+                        thumb.thumbnail((THUMB, THUMB))
+                        is_selected = abs_path in st.session_state[selected_key]
+                        border = "3px solid #4CAF50" if is_selected else "3px solid transparent"
+                        buf = _BytesIO()
+                        thumb.save(buf, format="PNG")
+                        b64img = _b64.b64encode(buf.getvalue()).decode()
+                        st.markdown(
+                            f'<img src="data:image/png;base64,{b64img}" '
+                            f'style="width:100%;border:{border};border-radius:4px;display:block;"/>',
+                            unsafe_allow_html=True,
+                        )
+                        label = "✅ selected" if is_selected else "select"
+                        if st.button(label, key=f"{session_key}_btn_{abs_path}", use_container_width=True):
+                            if is_selected:
+                                st.session_state[selected_key].remove(abs_path)
+                            else:
+                                st.session_state[selected_key].append(abs_path)
+                            st.rerun()
+                    except Exception:
+                        pass
+
+    # --- selection preview ---
+    selected_paths = [p for p in st.session_state[selected_key] if os.path.exists(p)]
+    st.session_state[selected_key] = selected_paths
+
+    if not selected_paths:
+        return None
+
+    st.markdown(f"**{len(selected_paths)} selected:**")
+    prev_cols = st.columns(min(len(selected_paths), 6))
+    for i, path in enumerate(selected_paths):
+        with prev_cols[i % 6]:
+            try:
+                if not stealth_mode:
+                    st.image(Image.open(path), width=130)
+            except Exception:
+                pass
+
+    if st.button("Clear selection", key=f"{session_key}_clear"):
+        st.session_state[selected_key] = []
+        st.rerun()
+
+    result = []
+    for path in selected_paths:
+        try:
+            result.append(ImageOps.exif_transpose(Image.open(path)).convert("RGB"))
+        except Exception:
+            pass
+    return result if result else None
 
 def show_image_in_notebook(image):
     """Display a PIL Image in a Jupyter notebook."""

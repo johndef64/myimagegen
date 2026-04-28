@@ -12,6 +12,7 @@ from tomlkit import key
 import yaml
 
 from src.prompt_enhancer import render_prompt_enhancer
+from utils import render_image_selector
 
 # Page configuration
 st.set_page_config(
@@ -889,25 +890,31 @@ with col1:
         accept_multiple_files=True,
         help="Upload one or more reference images to guide the generation"
     )
-    
-    # Display uploaded images
+
     if uploaded_files:
         st.write(f"**{len(uploaded_files)} image(s) uploaded**")
         ref_cols = st.columns(min(len(uploaded_files), 3))
         reference_images = []
-        
         for idx, uploaded_file in enumerate(uploaded_files):
             img = Image.open(uploaded_file)
-            img = ImageOps.exif_transpose(img)  # Fix orientation from EXIF data
+            img = ImageOps.exif_transpose(img)
             img = img.convert("RGB")
             reference_images.append(img)
-            
             with ref_cols[idx % 3]:
                 if not stealth_mode:
                     st.image(img, caption=f"Ref {idx+1}", width=150)
                 st.caption(f"Size: {img.size[0]}×{img.size[1]}")
     else:
         reference_images = None
+
+    with st.expander("📂 Select from images folder", expanded=False):
+        folder_imgs = render_image_selector(session_key="app_img_selector", stealth_mode=stealth_mode)
+        if folder_imgs:
+            if reference_images:
+                reference_images = reference_images + folder_imgs
+            else:
+                reference_images = folder_imgs
+            st.success(f"{len(folder_imgs)} image(s) from folder added as reference.")
     
 
 

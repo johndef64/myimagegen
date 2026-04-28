@@ -13,6 +13,7 @@ from google import genai
 from google.genai import types
 
 from src.prompt_enhancer import render_prompt_enhancer
+from utils import render_image_selector
 
 # Page configuration (only used when running standalone)
 if __name__ == "__main__" or "google_page" not in str(st.session_state.get("_page_loaded", "")):
@@ -1138,22 +1139,15 @@ def show_google_generator_page():
 
         if uploaded_files:
             st.write(f"**{len(uploaded_files)} image(s) uploaded**")
-            # st.info(
-            #     "The images are sent to the model **in this exact order** (left to right, top to bottom). "
-            #     "Use 'the first image', 'the second image', etc. in your prompt to reference them.",
-            #     icon="ℹ️"
-            # )
             ref_cols = st.columns(min(len(uploaded_files), 3))
             reference_images = []
             reference_image_names = []
-
             for idx, uploaded_file in enumerate(uploaded_files):
                 img = Image.open(uploaded_file)
                 img = ImageOps.exif_transpose(img)
                 img = img.convert("RGB")
                 reference_images.append(img)
                 reference_image_names.append(uploaded_file.name)
-
                 with ref_cols[idx % 3]:
                     if not stealth_mode:
                         st.image(img, caption=f"#{idx+1} — {uploaded_file.name}", width=150)
@@ -1161,6 +1155,19 @@ def show_google_generator_page():
         elif not uploaded_files:
             reference_images = None
             reference_image_names = []
+
+        if selected_model not in IMAGEN_MODELS:
+            with st.expander("📂 Select from images folder", expanded=False):
+                folder_imgs = render_image_selector(session_key="google_img_selector", stealth_mode=stealth_mode)
+                if folder_imgs:
+                    folder_names = [f"folder_{i+1}.jpg" for i in range(len(folder_imgs))]
+                    if reference_images:
+                        reference_images = reference_images + folder_imgs
+                        reference_image_names = reference_image_names + folder_names
+                    else:
+                        reference_images = folder_imgs
+                        reference_image_names = folder_names
+                    st.success(f"{len(folder_imgs)} image(s) from folder added as reference.")
 
 
 
