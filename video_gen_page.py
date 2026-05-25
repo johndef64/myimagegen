@@ -542,22 +542,15 @@ def _submit_job(api_key: str, req: VideoRequest):
     _persist_job(job_id, polling_url, req)
 
 
-# ---------------------------------------------------------------------------
-# POLLING FRAGMENT — re-runs every 8s automatically, touches only this section
-# ---------------------------------------------------------------------------
-@st.fragment(run_every=8)
-def _render_polling_fragment(api_key: str):
-    """Polls the job status every 8s. Stops when terminal state is reached."""
+def _do_poll(api_key: str):
+    """Poll the current job once and update session_state. Called on button press."""
     polling_url: str = st.session_state.get("video_gen_polling_url", "")
-    running: bool = st.session_state.get("video_gen_running", False)
-
-    if not running or not polling_url:
+    if not polling_url:
+        st.session_state.video_gen_error = "No polling URL — submit a job first."
         return
 
     poll_count = st.session_state.get("video_gen_poll_count", 0) + 1
     st.session_state.video_gen_poll_count = poll_count
-
-    elapsed = int(time.time() - st.session_state.get("video_gen_start_time", time.time()))
 
     try:
         client = OpenRouterVideoClient(api_key=api_key)
@@ -566,22 +559,15 @@ def _render_polling_fragment(api_key: str):
         _log_event(f"poll_error_{poll_count}", str(e))
         st.session_state.video_gen_error = f"Polling error: {e}"
         st.session_state.video_gen_status = "error"
-        st.session_state.video_gen_running = False
         return
 
     s = status_resp.get("status")
     _log_event(f"poll_{poll_count}", status_resp)
-    st.session_state.video_gen_status = f"Status: {s} ({elapsed}s elapsed)"
+    st.session_state.video_gen_status = f"{s}"
 
     terminal = {"completed", "failed", "cancelled", "expired"}
     if s not in terminal:
-        # Not done yet — show live status and let fragment re-fire
-        st.info(f"⏳ {st.session_state.video_gen_status}")
-        st.caption(f"Poll #{poll_count} — next check in ~8s")
-        return
-
-    # Terminal state reached
-    st.session_state.video_gen_running = False
+        return  # still processing — user will press the button again when ready
 
     if s == "completed":
         urls = status_resp.get("unsigned_urls") or []
@@ -597,6 +583,9 @@ def _render_polling_fragment(api_key: str):
                 _log_event("download_ok", {"bytes": len(video_bytes)})
                 st.session_state.video_gen_result = video_bytes
                 st.session_state.video_gen_status = "completed"
+                _update_persisted_job(
+                    st.session_state.get("video_gen_job_id", "?"), "completed"
+                )
             except Exception as e:
                 _log_event("download_error", str(e))
                 st.session_state.video_gen_error = f"Download error: {e}"
@@ -610,6 +599,9 @@ def _render_polling_fragment(api_key: str):
         _log_event("job_failed", status_resp)
         st.session_state.video_gen_error = f"Job {s}: {err}"
         st.session_state.video_gen_status = "error"
+        _update_persisted_job(
+            st.session_state.get("video_gen_job_id", "?"), s
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -956,18 +948,21 @@ def show_video_generator_page():
                 "seed": actual_seed,
             }
 
-            # Submit the job synchronously (fast — just sends the request)
+            # Submit — fast, just sends the POST request
             _submit_job(api_key, req)
             st.rerun()
 
-        # ── Polling fragment — auto-reruns every 8s while job is running ─────
-        _render_polling_fragment(api_key)
-
-        # Stop button (only shown while running)
-        if st.session_state.video_gen_running:
-            if st.button("⏹️ Stop waiting", key="video_stop_btn"):
-                st.session_state.video_gen_running = False
-                st.session_state.video_gen_error = "Stopped by user."
+        # ── Manual check button ──────────────────────────────────────────────
+        job_id = st.session_state.get("video_gen_job_id")
+        job_status = st.session_state.get("video_gen_status")
+        if job_id and job_status not in (None, "completed", "error"):
+            submitted_at = st.session_state.get("video_gen_start_time")
+            elapsed = int(time.time() - submitted_at) if submitted_at else 0
+            st.info(f"⏳ Job `{job_id}` — last status: **{job_status}** ({elapsed}s ago)")
+            st.caption("The job is running on OpenRouter servers. Press the button below when you want to check if it's ready — no need to wait here.")
+            if st.button("🔄 Check job status", key="video_check_btn", use_container_width=True, type="primary"):
+                with st.spinner("Polling..."):
+                    _do_poll(api_key)
                 st.rerun()
 
         # ── Error display ────────────────────────────────────────────────────
