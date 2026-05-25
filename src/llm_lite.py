@@ -11,20 +11,26 @@ import json
 from typing import Optional, Dict, Any, Union
 from openai import OpenAI
 
-# Load API keys
-# se non trova il file "api_keys.json" lo cerca nella directory superiore (utile per evitare di commettere chiavi nel repo)
-try:
-    with open("api_keys.json") as f:
-        api_keys = json.load(f)
-except FileNotFoundError:
-     try: 
-         with open("../api_keys.json") as f:
+# Load API keys — search relative to this file's location, then parent directory
+_here = os.path.dirname(os.path.abspath(__file__))
+_candidates = [
+    os.path.join(_here, "..", "api_keys.json"),   # project root (src/../)
+    os.path.join(_here, "api_keys.json"),          # src/ itself
+    "api_keys.json",                               # cwd fallback
+]
+api_keys: dict = {}
+for _path in _candidates:
+    try:
+        with open(_path) as f:
             api_keys = json.load(f)
-     except FileNotFoundError:
-         api_keys = {}
+        break
+    except (FileNotFoundError, OSError):
+        continue
 
-os.environ["GROQ_API_KEY"] = api_keys.get("groq")
-os.environ["OPENROUTER_API_KEY"] = api_keys.get("openrouter")
+if api_keys.get("groq"):
+    os.environ["GROQ_API_KEY"] = api_keys["groq"]
+if api_keys.get("openrouter"):
+    os.environ["OPENROUTER_API_KEY"] = api_keys["openrouter"]
 
 # Model dictionaries
 GROQ_MODELS = [

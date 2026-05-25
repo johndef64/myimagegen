@@ -28,11 +28,14 @@ OPENROUTER_IMAGE_MODELS = {
     "flux.2-pro": "black-forest-labs/flux.2-pro",
     "flux.2-flex": "black-forest-labs/flux.2-flex",
     "flux.2-max": "black-forest-labs/flux.2-max",
+
     "gemini-2.5-flash-image": "google/gemini-2.5-flash-image",
     "gemini-3-pro-image-preview": "google/gemini-3-pro-image-preview",
     "gemini-3.1-flash-image-preview": "google/gemini-3.1-flash-image-preview",
     "gpt-5-image-mini": "openai/gpt-5-image-mini",
     "gpt-5-image": "openai/gpt-5-image",
+
+    # riverflow family
     "riverflow-v2-fast":"sourceful/riverflow-v2-fast",
     "riverflow-v2-pro":"sourceful/riverflow-v2-pro",
     # "riverflow-v2-fast-preview" :"sourceful/riverflow-v2-fast-preview",
@@ -40,8 +43,178 @@ OPENROUTER_IMAGE_MODELS = {
     "riverflow-v2-max-preview" :"sourceful/riverflow-v2-max-preview",
 
     "seedream-4.5": "bytedance-seed/seedream-4.5",
+
+    # grok family
+    "grok-imagine-image-quality": "x-ai/grok-imagine-image-quality",
+
+    # recraft family
+    "recraft-v4.1-pro-vector": "recraft/recraft-v4.1-pro-vector",
+    "recraft-v4.1-vector": "recraft/recraft-v4.1-vector", # attenzione! recraft vecto ouptsd are in svg
+    # Versione Utility: Utilizza un'illuminazione piatta (flat lighting), inquadrature frontali e scene prive di distrazioni.Ideale per e-commerce, cataloghi, mock-up di prodotti e risorse grafiche in cui è richiesta la massima coerenza e ripetibilità, senza variazioni artistiche inaspettate.
+    "recraft-v4.1-utility-pro": "recraft/recraft-v4.1-utility-pro",
+    "recraft-v4.1-utility": "recraft/recraft-v4.1-utility", #0.04
+    "recraft-v4.1-pro": "recraft/recraft-v4.1-pro",  #0.25$
+    "recraft-v4.1": "recraft/recraft-v4.1",   # 0.04$
+
+    # recraft/recraft-v4-pro-vector # 0.30$
+    # recraft/recraft-v4-vector # 0.08$
+    # recraft/recraft-v4-pro # 0.25$
+    # recraft/recraft-v4 # 0.04$
 }
 default_model = "gemini-3.1-flash-image-preview" #"gemini-2.5-flash-image"
+
+# Implemtare la posiblità di fare vidoe geenation nella stessa app di base basata su Openrouter, con tutti i modelli video di Openrouter, in una sezione dedicata, con le stesse identiche funzionalità di prompt enhancer, prompt manager, e visualizzatore di immagini generate, ma per i video.
+
+# lo switch alla versione viedo puo essre fatto seplicemtne da barra laterale dove ci sarà la scelta del modello e di paramteri in una sezione per Video, seconbdi, risoluzione, audio etc
+
+# Questa sezione della pp, deve avere un funoine in piu, la previsoine dei costi di generaione del video. i costi che sono riuscito arecuperare sono in OPENROUTER_VIDEO_MODELS_COSTS, non rtutti i modelli hanno i copsti fini
+
+# come per la definizione del prompt per le immagini, che quello per i video deve avere lefunzoini di scrittura impeltazione basate su llm, ma ovviamnete i prompt di milogioramtneo edvono essere specificie per i video
+
+# API di esmepio pèer l'implemetazione sono in src/openrouter_video_universal.py
+# puoi usare questo scvriupt come riferimento e adattarlo modificarlo al fuzionamento della mia app
+
+# implementa la sezione video gen dell app con tutte le funzoinalità richieste
+
+
+OPENROUTER_VIDEO_MODELS_COSTS =     """
+google/veo-3.1 from $0,40 per second
+    Video (with audio)
+    1080p: $0,40 per second
+    4K: $0,60 per second
+    Video (no audio)
+    1080p: $0,20 per second
+    4K: $0,40 per second
+
+google/veo-3.1-lite from $0,05 per second
+    Video (with audio)
+    720p: $0,05 per second
+    1080p: $0,08 per second
+    Video (no audio)
+    720p: $0,03 per second
+    1080p: $0,05 per second
+
+google/veo-3.1-fast from $0,10 per second
+    Video (with audio)
+    720p: $0,10 per second
+    1080p: $0,12 per second
+    4K: $0,30 per second
+    Video (no audio)
+    720p: $0,08 per second
+    1080p: $0,10 per second
+    4K: $0,25 per second
+
+openai/sora-2-pro from $0,30 per second
+    Video Output
+    720p: $0,30 per second
+    1024p: $0,50 per second
+    1080p: $0,50 per second
+
+
+bytedance/seedance-1-5-pro  from $2,40 /M tokens :
+    Video Tokens (with audio)
+    $2,40 /M tokens
+    Video Tokens (no audio)
+    $1,20 /M tokens
+    Video (with audio)
+    480p: $0,02306 per second
+    720p: $0,05184 per second
+    1080p: $0,1166 per second
+    Video (no audio)
+    480p: $0,01153 per second
+    720p: $0,02592 per second
+    1080p: $0,05832 per secon
+
+bytedance/seedance-2.0
+    Video Tokens (with audio)
+    $7 /M tokens
+    Video Tokens (no audio)
+    $7 /M tokens
+    Video (with audio)
+    480p: $0,06726 per second
+    720p: $0,1512 per second
+    1080p: $0,3402 per second
+    Video (no audio)
+    480p: $0,06726 per second
+    720p: $0,1512 per second
+    1080p: $0,3402 per second
+
+
+bytedance/seedance-2.0-fast
+    Video Tokens (with audio)
+    $5,60 /M tokens
+    Video Tokens (no audio)
+    $5,60 /M tokens
+    Video (with audio)
+    480p: $0,0538 per second
+    720p: $0,121 per second
+    1080p: $0,2722 per second
+    Video (no audio)
+    480p: $0,0538 per second
+    720p: $0,121 per second
+    1080p: $0,2722 per second
+
+
+alibaba/wan-2.6 from $0,04 per second
+    Text to Video   
+    480p: $0,04 per second
+    720p: $0,08 per second
+    1080p: $0,12 per second
+    Image to Video
+    720p: $0,10 per second
+    1080p: $0,15 per second
+
+alibaba/wan-2.7 $0,10 per second
+
+minimax/hailuo-2.3   $0,0817 per second
+
+kwaivgi/kling-video-o1  $0,112 per second
+
+kwaivgi/kling-v3.0-std from $0,126 per second
+    Video (with audio)
+    $0,126 per second
+    Video (no audio)
+    $0,084 per second
+ 
+kwaivgi/kling-v3.0-pro from $0,168 per second
+    Video (with audio)
+    $0,168 per second
+    Video (no audio)
+    $0,112 per second
+
+x-ai/grok-imagine-video from $0,05 per second
+    Video Output
+    480p: $0,05 per second
+    720p: $0,07 per second
+    Image Input
+    $0,002 per image
+
+"""
+
+OPENROUTER_VIDEO_MODELS = {
+    # Google Veo
+    "veo-3.1":             "google/veo-3.1",
+    "veo-3.1-fast":        "google/veo-3.1-fast",
+    "veo-3.1-lite":        "google/veo-3.1-lite",
+    # ByteDance Seedance
+    "seedance-1.5-pro":    "bytedance/seedance-1-5-pro",
+    "seedance-2.0":        "bytedance/seedance-2.0",
+    "seedance-2.0-fast":   "bytedance/seedance-2.0-fast",
+    # Kuaishou Kling
+    "kling-v3-pro":        "kwaivgi/kling-v3.0-pro",
+    "kling-v3-std":        "kwaivgi/kling-v3.0-std",
+    "kling-o1":            "kwaivgi/kling-video-o1",
+    # Alibaba Wan
+    "wan-2.7":             "alibaba/wan-2.7",
+    "wan-2.6":             "alibaba/wan-2.6",
+    # MiniMax
+    "hailuo-2.3":          "minimax/hailuo-2.3",
+    # OpenAI
+    "sora-2-pro":          "openai/sora-2-pro",
+    # xAI
+    "grok-imagine-video":  "x-ai/grok-imagine-video",
+}
+
 
 ASPECT_RATIOS = {
     "1:1 (1024×1024)": "1:1",
@@ -74,7 +247,7 @@ def load_api_key():
 def load_prompts_from_yaml(file_path="prompts.yaml"):
     root_path = "prompts/"
     file_path = os.path.join(root_path, file_path)
-    """Load prompts from YAML file"""
+    # """Load prompts from YAML file"""
     if not os.path.exists(file_path):
         return {}
     # if os.path.exists("prompts/prompts_custom.yaml"):
@@ -92,7 +265,7 @@ def load_prompts_from_yaml(file_path="prompts.yaml"):
 def load_prompts_from_json(file_path="prompts.json"):
     root_path = "prompts/"
     file_path = os.path.join(root_path, file_path)
-    """Load prompts from JSON file"""
+    # """Load prompts from JSON file"""
     if not os.path.exists(file_path):
         return {}
     # if os.path.exists("prompts/prompts_custom.json"):
@@ -479,6 +652,7 @@ with st.sidebar:
     page = st.radio(
         "Navigate",
         ["Image Generator",
+         "Video Generator",
          "Google AI Generator",
          "Prompt Generator",
          "Image Viewer",
@@ -489,6 +663,11 @@ with st.sidebar:
         label_visibility="collapsed"
     )
     st.divider()
+
+if page == "Video Generator":
+    import video_gen_page
+    video_gen_page.show_video_generator_page()
+    st.stop()
 
 if page == "Google AI Generator":
     import google_page

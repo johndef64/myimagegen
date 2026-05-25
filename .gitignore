@@ -21,6 +21,7 @@ modelslab/_*
 
 
 images/*
+jobs/*
 
 MyImageGen.lnk
 *_custom.yaml
