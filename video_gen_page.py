@@ -17,7 +17,6 @@ import base64
 import json
 import os
 import random
-import threading
 import time
 from datetime import datetime
 from io import BytesIO
@@ -376,6 +375,27 @@ def _flatten_json_prompts(data: dict) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# ASPECT RATIO DETECTION
+# ---------------------------------------------------------------------------
+def _get_image_aspect_ratio(image: Image.Image) -> str:
+    """Return the closest standard video aspect ratio for the given image."""
+    w, h = image.size
+    ratio = w / h
+    candidates = {
+        "16:9": 16 / 9,
+        "9:16": 9 / 16,
+        "1:1":  1.0,
+        "4:3":  4 / 3,
+        "3:4":  3 / 4,
+        "3:2":  3 / 2,
+        "2:3":  2 / 3,
+        "21:9": 21 / 9,
+        "9:21": 9 / 21,
+    }
+    return min(candidates, key=lambda k: abs(candidates[k] - ratio))
+
+
+# ---------------------------------------------------------------------------
 # IMAGE → BASE64 URL (for frame images)
 # ---------------------------------------------------------------------------
 def _pil_to_data_url(img: Image.Image, max_size: int = 1024) -> str:
@@ -405,72 +425,206 @@ def _save_video(data: bytes, prompt: str, model_name: str, output_folder: str = 
     return filename
 
 
+JOBS_LOG_FILE = "batch_jobs_log.json"
+
+
+def _persist_job(job_id: str, polling_url: str, req: VideoRequest):
+    """Append job metadata to batch_jobs_log.json so it survives session restarts."""
+    entry = {
+        "job_id": job_id,
+        "polling_url": polling_url,
+        "model": req.model,
+        "prompt": req.prompt,
+        "duration": req.duration,
+        "resolution": req.resolution,
+        "aspect_ratio": req.aspect_ratio,
+        "generate_audio": req.generate_audio,
+        "seed": req.seed,
+        "submitted_at": datetime.now().isoformat(),
+        "status": "submitted",
+    }
+    log: list = []
+    if os.path.exists(JOBS_LOG_FILE):
+        try:
+            with open(JOBS_LOG_FILE, "r", encoding="utf-8") as f:
+                log = json.load(f)
+        except Exception:
+            log = []
+    # avoid duplicates
+    if not any(j.get("job_id") == job_id for j in log):
+        log.append(entry)
+    with open(JOBS_LOG_FILE, "w", encoding="utf-8") as f:
+        json.dump(log, f, indent=2, ensure_ascii=False)
+
+
+def _update_persisted_job(job_id: str, status: str, saved_path: str | None = None):
+    """Update status of a job already in batch_jobs_log.json."""
+    if not os.path.exists(JOBS_LOG_FILE):
+        return
+    try:
+        with open(JOBS_LOG_FILE, "r", encoding="utf-8") as f:
+            log = json.load(f)
+        for entry in log:
+            if entry.get("job_id") == job_id:
+                entry["status"] = status
+                if saved_path:
+                    entry["saved_path"] = saved_path
+        with open(JOBS_LOG_FILE, "w", encoding="utf-8") as f:
+            json.dump(log, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _load_persisted_jobs() -> list[dict]:
+    if not os.path.exists(JOBS_LOG_FILE):
+        return []
+    try:
+        with open(JOBS_LOG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
 # ---------------------------------------------------------------------------
-# BACKGROUND GENERATION THREAD
+# LOG HELPER
 # ---------------------------------------------------------------------------
-def _run_generation_thread(
-    api_key: str,
-    req: VideoRequest,
-    result_key: str,
-    status_key: str,
-    error_key: str,
-):
-    """Runs in background thread. Writes result to st.session_state when done."""
+def _log_event(event: str, data: Any = None):
+    entry = {"_ts": datetime.now().strftime("%H:%M:%S"), "event": event, "data": data}
+    log: list = st.session_state.get("video_gen_log") or []
+    log.append(entry)
+    st.session_state["video_gen_log"] = log
+
+
+def _safe_payload_for_log(payload: dict) -> dict:
+    """Truncate base64 blobs so the log stays readable."""
+    safe = json.loads(json.dumps(payload))
+    for key in ("frame_images", "input_references"):
+        for item in safe.get(key, []):
+            url = item.get("image_url", {}).get("url", "")
+            if url.startswith("data:"):
+                item["image_url"]["url"] = url[:60] + "…[base64 truncated]"
+    return safe
+
+
+# ---------------------------------------------------------------------------
+# SUBMIT (called once on button press — synchronous, fast)
+# ---------------------------------------------------------------------------
+def _submit_job(api_key: str, req: VideoRequest):
+    """Submit the job to OpenRouter and store job_id + polling_url in session_state."""
+    _log_event("submit_payload", _safe_payload_for_log(req.to_payload()))
     try:
         client = OpenRouterVideoClient(api_key=api_key)
-
-        def _update_status(msg: str):
-            st.session_state[status_key] = msg
-
-        _update_status("Submitting job...")
         sub = client.submit(req)
-        job_id = sub.get("id", "?")
-        polling_url = sub.get("polling_url", "")
-        _update_status(f"Job {job_id} submitted — polling...")
-
-        start = time.time()
-        terminal = {"completed", "failed", "cancelled", "expired"}
-        while True:
-            status_resp = client.poll(polling_url)
-            s = status_resp.get("status")
-            elapsed = int(time.time() - start)
-            _update_status(f"Status: {s} ({elapsed}s elapsed)")
-            if s in terminal:
-                if s == "completed":
-                    urls = status_resp.get("unsigned_urls") or []
-                    if urls:
-                        video_url = urls[0]
-                        if video_url.startswith("/"):
-                            video_url = f"https://openrouter.ai{video_url}"
-                        resp = requests.get(video_url, stream=True, timeout=120)
-                        resp.raise_for_status()
-                        video_bytes = resp.content
-                        st.session_state[result_key] = video_bytes
-                        _update_status("completed")
-                    else:
-                        st.session_state[error_key] = "Completed but no video URL returned."
-                        _update_status("error")
-                else:
-                    err = status_resp.get("error") or s
-                    st.session_state[error_key] = f"Job {s}: {err}"
-                    _update_status("error")
-                break
-            if time.time() - start > 900:
-                st.session_state[error_key] = "Timeout: job did not complete within 15 minutes."
-                _update_status("error")
-                break
-            time.sleep(8)
     except Exception as e:
-        st.session_state[error_key] = str(e)
-        st.session_state[status_key] = "error"
+        _log_event("submit_error", str(e))
+        st.session_state.video_gen_error = f"Submit error: {e}"
+        st.session_state.video_gen_status = "error"
+        st.session_state.video_gen_running = False
+        return
+
+    _log_event("submit_response", sub)
+
+    polling_url = sub.get("polling_url", "")
+    if not polling_url:
+        err = sub.get("error") or sub.get("message") or "No polling_url in response"
+        st.session_state.video_gen_error = f"API error: {err}"
+        st.session_state.video_gen_status = "error"
+        st.session_state.video_gen_running = False
+        return
+
+    job_id = sub.get("id", "?")
+    st.session_state.video_gen_job_id = job_id
+    st.session_state.video_gen_polling_url = polling_url
+    st.session_state.video_gen_status = f"Job {job_id} submitted — waiting..."
+    st.session_state.video_gen_poll_count = 0
+
+    # Persist job to disk so it can be recovered across sessions
+    _persist_job(job_id, polling_url, req)
+
+
+# ---------------------------------------------------------------------------
+# POLLING FRAGMENT — re-runs every 8s automatically, touches only this section
+# ---------------------------------------------------------------------------
+@st.fragment(run_every=8)
+def _render_polling_fragment(api_key: str):
+    """Polls the job status every 8s. Stops when terminal state is reached."""
+    polling_url: str = st.session_state.get("video_gen_polling_url", "")
+    running: bool = st.session_state.get("video_gen_running", False)
+
+    if not running or not polling_url:
+        return
+
+    poll_count = st.session_state.get("video_gen_poll_count", 0) + 1
+    st.session_state.video_gen_poll_count = poll_count
+
+    elapsed = int(time.time() - st.session_state.get("video_gen_start_time", time.time()))
+
+    try:
+        client = OpenRouterVideoClient(api_key=api_key)
+        status_resp = client.poll(polling_url)
+    except Exception as e:
+        _log_event(f"poll_error_{poll_count}", str(e))
+        st.session_state.video_gen_error = f"Polling error: {e}"
+        st.session_state.video_gen_status = "error"
+        st.session_state.video_gen_running = False
+        return
+
+    s = status_resp.get("status")
+    _log_event(f"poll_{poll_count}", status_resp)
+    st.session_state.video_gen_status = f"Status: {s} ({elapsed}s elapsed)"
+
+    terminal = {"completed", "failed", "cancelled", "expired"}
+    if s not in terminal:
+        # Not done yet — show live status and let fragment re-fire
+        st.info(f"⏳ {st.session_state.video_gen_status}")
+        st.caption(f"Poll #{poll_count} — next check in ~8s")
+        return
+
+    # Terminal state reached
+    st.session_state.video_gen_running = False
+
+    if s == "completed":
+        urls = status_resp.get("unsigned_urls") or []
+        if urls:
+            video_url = urls[0]
+            if video_url.startswith("/"):
+                video_url = f"https://openrouter.ai{video_url}"
+            _log_event("download_start", {"url": video_url})
+            try:
+                resp = requests.get(video_url, stream=True, timeout=120)
+                resp.raise_for_status()
+                video_bytes = resp.content
+                _log_event("download_ok", {"bytes": len(video_bytes)})
+                st.session_state.video_gen_result = video_bytes
+                st.session_state.video_gen_status = "completed"
+            except Exception as e:
+                _log_event("download_error", str(e))
+                st.session_state.video_gen_error = f"Download error: {e}"
+                st.session_state.video_gen_status = "error"
+        else:
+            _log_event("no_urls", status_resp)
+            st.session_state.video_gen_error = "Completed but no video URL returned."
+            st.session_state.video_gen_status = "error"
+    else:
+        err = status_resp.get("error") or status_resp.get("message") or s
+        _log_event("job_failed", status_resp)
+        st.session_state.video_gen_error = f"Job {s}: {err}"
+        st.session_state.video_gen_status = "error"
 
 
 # ---------------------------------------------------------------------------
 # MAIN PAGE
 # ---------------------------------------------------------------------------
 def show_video_generator_page():
-    st.title("🎬 OpenRouter Video Generator")
-    st.markdown("Generate videos using OpenRouter video models with full parameter control.")
+    col_title, col_recover = st.columns([3, 1])
+    with col_title:
+        st.title("🎬 OpenRouter Video Generator")
+        st.markdown("Generate videos using OpenRouter video models with full parameter control.")
+    with col_recover:
+        st.markdown("&nbsp;", unsafe_allow_html=True)  # vertical spacer
+        if st.button("🔄 Recover Past Jobs", key="video_recover_shortcut", use_container_width=True,
+                     help="List all past jobs from your OpenRouter account and download completed videos"):
+            st.session_state["video_scroll_to_recover"] = True
 
     # ── Session state init ──────────────────────────────────────────────────
     for key, default in [
@@ -482,6 +636,7 @@ def show_video_generator_page():
         ("video_gen_prompt_used", ""),
         ("video_gen_model_used", ""),
         ("video_gen_params_used", {}),
+        ("video_gen_log", []),
     ]:
         if key not in st.session_state:
             st.session_state[key] = default
@@ -518,12 +673,22 @@ def show_video_generator_page():
             key="video_resolution",
         )
 
-        aspect_ratio = st.selectbox(
+        use_auto_aspect = st.checkbox(
+            "Auto-detect aspect ratio from frame image",
+            value=True,
+            key="video_use_auto_aspect",
+            help="Automatically use the aspect ratio of the first frame image uploaded",
+        )
+
+        aspect_ratio_manual = st.selectbox(
             "Aspect Ratio",
             options=VIDEO_ASPECT_RATIOS,
             index=0,  # 16:9 default
+            disabled=use_auto_aspect,
             key="video_aspect_ratio",
+            help="Target aspect ratio for generated video",
         )
+        aspect_ratio = aspect_ratio_manual
 
         generate_audio = st.checkbox(
             "🔊 Generate Audio",
@@ -755,12 +920,19 @@ def show_video_generator_page():
 
             actual_seed = seed if not use_random_seed else random.randint(1, 1_000_000)
 
+            # Auto-detect aspect ratio from first frame image if enabled
+            effective_aspect_ratio = aspect_ratio
+            if use_auto_aspect:
+                ref_img_for_ar = first_frame_img or last_frame_img or (ref_images_pil[0] if ref_images_pil else None)
+                if ref_img_for_ar is not None:
+                    effective_aspect_ratio = _get_image_aspect_ratio(ref_img_for_ar)
+
             req = VideoRequest(
                 model=model_id,
                 prompt=prompt.strip(),
                 duration=duration,
                 resolution=resolution,
-                aspect_ratio=aspect_ratio,
+                aspect_ratio=effective_aspect_ratio,
                 generate_audio=generate_audio,
                 seed=actual_seed,
                 frame_images=frame_images_payload,
@@ -772,6 +944,8 @@ def show_video_generator_page():
             st.session_state.video_gen_error = None
             st.session_state.video_gen_status = "Starting..."
             st.session_state.video_gen_running = True
+            st.session_state.video_gen_start_time = time.time()
+            st.session_state.video_gen_log = []
             st.session_state.video_gen_prompt_used = prompt.strip()
             st.session_state.video_gen_model_used = model_id
             st.session_state.video_gen_params_used = {
@@ -782,42 +956,53 @@ def show_video_generator_page():
                 "seed": actual_seed,
             }
 
-            thread = threading.Thread(
-                target=_run_generation_thread,
-                args=(
-                    api_key,
-                    req,
-                    "video_gen_result",
-                    "video_gen_status",
-                    "video_gen_error",
-                ),
-                daemon=True,
-            )
-            thread.start()
+            # Submit the job synchronously (fast — just sends the request)
+            _submit_job(api_key, req)
             st.rerun()
 
-        # ── Status / progress ────────────────────────────────────────────────
-        status = st.session_state.video_gen_status
-        running = st.session_state.video_gen_running
+        # ── Polling fragment — auto-reruns every 8s while job is running ─────
+        _render_polling_fragment(api_key)
 
-        if running and status not in (None, "completed", "error"):
-            st.info(f"⏳ {status}")
-            st.caption("Video generation can take 1–5 minutes. This page auto-refreshes every 8s.")
-            time.sleep(8)
-            # Check if thread finished
-            if st.session_state.video_gen_status in ("completed", "error"):
+        # Stop button (only shown while running)
+        if st.session_state.video_gen_running:
+            if st.button("⏹️ Stop waiting", key="video_stop_btn"):
                 st.session_state.video_gen_running = False
-            st.rerun()
-
-        if status == "completed" or (status and "completed" in str(status)):
-            st.session_state.video_gen_running = False
-
-        if status == "error" or st.session_state.video_gen_error:
-            st.session_state.video_gen_running = False
+                st.session_state.video_gen_error = "Stopped by user."
+                st.rerun()
 
         # ── Error display ────────────────────────────────────────────────────
         if st.session_state.video_gen_error:
             st.error(f"❌ Generation failed: {st.session_state.video_gen_error}")
+
+        # ── Debug log panel ──────────────────────────────────────────────────
+        gen_log: list = st.session_state.get("video_gen_log") or []
+        if gen_log or st.session_state.video_gen_status:
+            with st.expander("🔍 API Debug Log", expanded=bool(st.session_state.video_gen_error)):
+                st.caption("Full request/response trace for every API call in the current generation.")
+                if st.session_state.video_gen_status:
+                    st.markdown(f"**Current status:** `{st.session_state.video_gen_status}`")
+                for entry in gen_log:
+                    ts = entry.get("_ts", "")
+                    event = entry.get("event", "?")
+                    data = entry.get("data")
+                    label = f"`{ts}` — **{event}**"
+                    if event == "submit_payload":
+                        with st.expander(label, expanded=False):
+                            st.json(data)
+                    elif event == "submit_response":
+                        color = "green" if not data.get("error") else "red"
+                        with st.expander(label, expanded=True):
+                            st.json(data)
+                    elif event.startswith("poll_") and not event.endswith("error"):
+                        with st.expander(label, expanded=False):
+                            st.json(data)
+                    else:
+                        # errors, download events, etc — always expanded
+                        with st.expander(label, expanded=True):
+                            if isinstance(data, (dict, list)):
+                                st.json(data)
+                            else:
+                                st.code(str(data))
 
         # ── Video result display ─────────────────────────────────────────────
         video_bytes: bytes | None = st.session_state.video_gen_result
@@ -880,9 +1065,6 @@ def show_video_generator_page():
                 st.session_state.video_generated_history.append(history_entry)
                 if len(st.session_state.video_generated_history) > 10:
                     st.session_state.video_generated_history.pop(0)
-
-        elif not running and status is not None and status not in ("completed", "error") and "completed" not in str(status):
-            pass  # nothing to show yet
 
         # ── Quick prompt generator (video) ──────────────────────────────────
         st.divider()
@@ -962,3 +1144,164 @@ def show_video_generator_page():
                     mime="video/mp4",
                     key=f"video_hist_dl_{i}",
                 )
+
+    # ── Recover past jobs ────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("🔄 Recover Past Jobs")
+    st.caption(
+        f"Jobs are logged locally in `{JOBS_LOG_FILE}`. "
+        "OpenRouter does not expose a list-jobs API — every job submitted from this app is saved here automatically. "
+        "Poll any pending job to check if it completed and download the result."
+    )
+
+    if not api_key:
+        st.warning("⚠️ API key required to poll/download jobs.")
+    else:
+        auto_fetch = st.session_state.pop("video_scroll_to_recover", False)
+
+        col_r1, col_r2 = st.columns([1, 3])
+        with col_r1:
+            load_btn = st.button("📋 Load from log file", key="video_recover_fetch_btn", use_container_width=True)
+        with col_r2:
+            manual_polling_url = st.text_input(
+                "Or enter polling URL / job ID manually",
+                key="video_recover_manual_id",
+                placeholder="https://openrouter.ai/api/v1/videos/gen_01j…  or just  gen_01j…",
+            )
+            manual_fetch_btn = st.button("🔍 Add & poll", key="video_recover_manual_btn")
+
+        if load_btn or auto_fetch:
+            persisted = _load_persisted_jobs()
+            if persisted:
+                st.session_state["video_recover_jobs"] = persisted
+                st.success(f"Loaded {len(persisted)} job(s) from `{JOBS_LOG_FILE}`.")
+            else:
+                st.info(f"No jobs found in `{JOBS_LOG_FILE}` yet. Jobs are saved automatically when you generate.")
+
+        # Add a job manually by polling URL or bare job ID
+        if manual_fetch_btn and manual_polling_url.strip():
+            raw = manual_polling_url.strip()
+            poll_url = raw if raw.startswith("http") else f"https://openrouter.ai/api/v1/videos/{raw}"
+            with st.spinner(f"Polling {poll_url}..."):
+                try:
+                    r = requests.get(
+                        poll_url,
+                        headers={"Authorization": f"Bearer {api_key}"},
+                        timeout=30,
+                    )
+                    r.raise_for_status()
+                    polled = r.json()
+                    # Normalise: polling response may have different shape than persisted entry
+                    jid = polled.get("id") or polled.get("job_id") or raw
+                    entry = {
+                        "job_id": jid,
+                        "polling_url": poll_url,
+                        "model": polled.get("model", "?"),
+                        "prompt": polled.get("prompt", ""),
+                        "status": polled.get("status", "?"),
+                        "submitted_at": polled.get("created_at", ""),
+                        "_polled_response": polled,
+                    }
+                    existing: list = st.session_state.get("video_recover_jobs", [])
+                    ids = [j.get("job_id") for j in existing]
+                    if jid in ids:
+                        existing[ids.index(jid)] = entry
+                    else:
+                        existing = [entry] + existing
+                    st.session_state["video_recover_jobs"] = existing
+                except Exception as e:
+                    st.error(f"❌ Poll failed: {e}")
+
+        # ── Job list display ─────────────────────────────────────────────────
+        jobs: list = st.session_state.get("video_recover_jobs", [])
+        if not jobs:
+            st.caption("No jobs loaded yet. Click **Load from log file** or add a polling URL manually.")
+        else:
+            st.caption(f"**{len(jobs)}** job(s) — newest first.")
+            STATUS_ICON = {"completed": "✅", "failed": "❌", "cancelled": "🚫",
+                           "submitted": "🕐", "processing": "⏳", "queued": "🕐", "error": "❌"}
+
+            for j_idx, job in enumerate(reversed(jobs)):
+                jid     = job.get("job_id", "?")
+                jstatus = job.get("status", "?")
+                jmodel  = (job.get("model") or "?").split("/")[-1]
+                jprompt = (job.get("prompt") or "")[:70]
+                jsub    = job.get("submitted_at", "")[:16]
+                icon    = STATUS_ICON.get(jstatus, "❓")
+                label   = f"{icon} `{jid}` — {jstatus} — {jmodel} — {jprompt or '(no prompt)'} {jsub}"
+
+                with st.expander(label, expanded=False):
+                    # Show stored metadata (exclude bulky polled response by default)
+                    meta = {k: v for k, v in job.items() if k != "_polled_response"}
+                    st.json(meta)
+                    if job.get("saved_path") and os.path.exists(job["saved_path"]):
+                        st.success(f"Already saved locally: `{job['saved_path']}`")
+                        with open(job["saved_path"], "rb") as fv:
+                            st.video(fv.read())
+
+                    poll_url = job.get("polling_url", "")
+
+                    # Poll / re-check button (always available for non-completed jobs)
+                    if jstatus not in ("completed",) and poll_url:
+                        if st.button(f"🔄 Poll status now", key=f"vr_poll_{j_idx}"):
+                            with st.spinner("Polling..."):
+                                try:
+                                    r = requests.get(
+                                        poll_url,
+                                        headers={"Authorization": f"Bearer {api_key}"},
+                                        timeout=30,
+                                    )
+                                    r.raise_for_status()
+                                    polled = r.json()
+                                    new_status = polled.get("status", jstatus)
+                                    job["status"] = new_status
+                                    job["_polled_response"] = polled
+                                    _update_persisted_job(jid, new_status)
+                                    # grab unsigned_urls if present
+                                    if polled.get("unsigned_urls"):
+                                        job["unsigned_urls"] = polled["unsigned_urls"]
+                                    real_idx = len(jobs) - 1 - j_idx
+                                    jobs[real_idx] = job
+                                    st.session_state["video_recover_jobs"] = jobs
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ Poll failed: {e}")
+
+                    # Download if URLs available
+                    urls = job.get("unsigned_urls") or job.get("_polled_response", {}).get("unsigned_urls") or []
+                    if urls:
+                        for u_idx, video_url in enumerate(urls):
+                            if video_url.startswith("/"):
+                                video_url = f"https://openrouter.ai{video_url}"
+                            if st.button(f"⬇️ Download & save video", key=f"vr_dl_{j_idx}_{u_idx}"):
+                                with st.spinner("Downloading..."):
+                                    try:
+                                        r = requests.get(
+                                            video_url,
+                                            headers={"Authorization": f"Bearer {api_key}"},
+                                            stream=True, timeout=120,
+                                        )
+                                        r.raise_for_status()
+                                        vbytes = r.content
+                                        os.makedirs("outputs/videos", exist_ok=True)
+                                        fname = f"recovered_{jid}_{u_idx}.mp4"
+                                        fpath = os.path.join("outputs/videos", fname)
+                                        with open(fpath, "wb") as fv:
+                                            fv.write(vbytes)
+                                        job["status"] = "completed"
+                                        job["saved_path"] = fpath
+                                        real_idx = len(jobs) - 1 - j_idx
+                                        jobs[real_idx] = job
+                                        st.session_state["video_recover_jobs"] = jobs
+                                        _update_persisted_job(jid, "completed", fpath)
+                                        st.success(f"Saved to `{fpath}`")
+                                        st.video(vbytes)
+                                        st.download_button(
+                                            "⬇️ Save to computer",
+                                            data=vbytes,
+                                            file_name=fname,
+                                            mime="video/mp4",
+                                            key=f"vr_save_{j_idx}_{u_idx}",
+                                        )
+                                    except Exception as e:
+                                        st.error(f"❌ Download failed: {e}")
