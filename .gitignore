@@ -1,6 +1,7 @@
 
 .vscode/*
 *__pycache__/*
+*/__pycache__/
 
 dev/*
 outputs/*
@@ -18,7 +19,8 @@ docs/*
 modelslab/output*
 modelslab/docs*
 modelslab/_*
-
+modelslab/archive/*
+*.tmp
 
 images/*
 jobs/*
@@ -32,7 +34,10 @@ api_generator.py
 README_*
 
 *_dev*
-*_v*.py
+*_v0.py
+*_v1.py
+*_v2.py
+*_v3.py
 
 src/ocr_test/*
 
