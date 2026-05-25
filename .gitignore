@@ -1,6 +1,6 @@
 
 .vscode/*
-__pycache__/*
+*__pycache__/*
 
 dev/*
 outputs/*
@@ -37,3 +37,6 @@ README_*
 src/ocr_test/*
 
 playground*
+
+# ignore bypassing the gitignore with "git add -f"
+!src\openrouter_video_universal.py
