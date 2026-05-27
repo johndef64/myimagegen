@@ -157,22 +157,6 @@ QWEN_SIZE_TIERS = {
     "Ultra (~7 MP)": QWEN_SIZE_DICT_ULTRA,
 }
 
-# ---- NanoBanana (nanobanana-lite-pretrained) ---------------------------------
-# Supports up to 2048 px per side
-NANOBANANA_SIZE_DICT = {
-    "1:1": (2048, 2048),
-    "3:4": (1536, 2048),
-    "9:16": (1152, 2048),
-    "4:3": (2048, 1536),
-    "16:9": (2048, 1152),
-    "2:3": (1368, 2048),
-    "3:2": (2048, 1368),
-}
-
-NANOBANANA_SIZE_TIERS = {
-    "Standard (max 2048 px/side)": NANOBANANA_SIZE_DICT,
-}
-
 # ---- V7 img2img / txt2img -------------------------------------------------
 # V7 API caps each side at 1024 px — only one tier available
 V7_SIZE_DICT = {
@@ -529,6 +513,7 @@ MODEL_CONFIGS = {
         "init_image_as_list": True,
     },
     # === NanoBanana Models ===
+    # Requires public URLs for init_image (no base64), uses V6 img2img endpoint
     "nanobanana-lite-pretrained": {
         "num_inference_steps": 20,
         "strength": 0.7,
@@ -537,6 +522,7 @@ MODEL_CONFIGS = {
         "supports_txt2img": False,
         "supports_img2img": True,
         "init_image_as_list": True,
+        "requires_url_input": True,  # Like V7: needs URLs, not base64
     },
     # === WAN 2.7 Models ===
     "wan-2.7-i2i": {

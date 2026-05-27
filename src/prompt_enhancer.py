@@ -2,7 +2,7 @@
 import streamlit as st
 from src.llm_lite import llm_inference
 
-LLM_ENHANCE_MODEL = "x-ai/grok-4"
+LLM_ENHANCE_MODEL = "x-ai/grok-4.3"
 
 # LLM_ENHANCE_SYSTEM = (
 #     "You are an expert image-prompt engineer. Expand and enrich the user's prompt "

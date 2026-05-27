@@ -56,6 +56,8 @@ from modelslab.modelslab_api import (
     QWEN_SIZE_TIERS,
     V7_SIZE_DICT,
     V7_SIZE_TIERS,
+    NANOBANANA_SIZE_DICT,
+    NANOBANANA_SIZE_TIERS,
     SCHEDULER_LIST,
     FLUXDEV_LORAS,
     FLUX1_LORAS,
@@ -166,6 +168,8 @@ def get_aspect_ratio_options(model_id: Optional[str], resolution_tier: str = "")
         tiers = QWEN_SIZE_TIERS
     elif is_v7_model(model_id):
         tiers = V7_SIZE_TIERS
+    elif model_id == "nanobanana-lite-pretrained":
+        tiers = NANOBANANA_SIZE_TIERS
     else:
         tiers = SIZE_IMAGE_TIERS
     # Pick the requested tier, fall back to first available
@@ -179,6 +183,8 @@ def get_resolution_tiers(model_id: Optional[str]) -> Dict[str, Dict]:
         return QWEN_SIZE_TIERS
     elif is_v7_model(model_id):
         return V7_SIZE_TIERS
+    elif model_id == "nanobanana-lite-pretrained":
+        return NANOBANANA_SIZE_TIERS
     else:
         return SIZE_IMAGE_TIERS
 
@@ -1471,8 +1477,12 @@ def show_modelslab_generator_page():
                                     "strength": strength,
                                     "negative_prompt": negative_prompt,
                                 })
-                                # remove enhence_prompt for V7 img2img — not supported by the endpoint
-                                # generation_kwargs.pop("enhance_prompt", None)
+                            elif selected_model == "nanobanana-lite-pretrained":
+                                # nanobanana: send only strength and negative_prompt
+                                generation_kwargs.update({
+                                    # "strength": strength,
+                                    "negative_prompt": negative_prompt,
+                                })
                             else:
                                 # Standard V6 img2img
                                 generation_kwargs.update({
