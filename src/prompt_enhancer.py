@@ -74,6 +74,8 @@ def render_prompt_enhancer(prompt: str, session_key: str = "llm_enhanced_prompt"
         The prompt to actually use for generation.
     """
 
+    editor_key = f"{session_key}_editor"
+
     def _run_llm(system_prompt: str, label: str, user_payload: str | None = None):
         src = (prompt or "").strip()
         if not src:
@@ -89,6 +91,10 @@ def render_prompt_enhancer(prompt: str, session_key: str = "llm_enhanced_prompt"
                 )
             if result and result.strip():
                 st.session_state[session_key] = result.strip()
+                # Also push into the editor widget's own state, otherwise the
+                # text_area keeps showing the previous result (Streamlit ignores
+                # `value=` once a widget with that key already has state).
+                st.session_state[editor_key] = result.strip()
                 st.rerun()
             else:
                 st.warning("⚠️ LLM returned empty response.")
@@ -130,14 +136,19 @@ def render_prompt_enhancer(prompt: str, session_key: str = "llm_enhanced_prompt"
             "🗑️ Clear", key=f"{session_key}_btn_clear"
         ):
             st.session_state.pop(session_key, None)
+            st.session_state.pop(editor_key, None)
             st.rerun()
 
     if st.session_state.get(session_key):
+        # The widget owns its state via `editor_key`; `_run_llm` seeds that key
+        # so a fresh result replaces the box content. We only pass `value=` for
+        # the very first render before the widget key exists.
+        if editor_key not in st.session_state:
+            st.session_state[editor_key] = st.session_state[session_key]
         edited = st.text_area(
             "✨ Enhanced Prompt (editable — used for generation)",
-            value=st.session_state[session_key],
             height=200,
-            key=f"{session_key}_editor",
+            key=editor_key,
             help="Edit freely. This text overrides the prompt above."
         )
         st.session_state[session_key] = edited
