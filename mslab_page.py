@@ -667,7 +667,7 @@ def show_modelslab_generator_page():
         if not available_models:
             st.error("No models available. Please update MODEL_CONFIGS.")
             st.stop()
-        default_model = "flux-2-dev" if "flux-2-dev" in available_models else available_models[0]
+        default_model = "qwen-edit-2511" if "qwen-edit-2511" in available_models else available_models[0]
 
         selected_model = st.selectbox(
             "Model",

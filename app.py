@@ -652,13 +652,13 @@ with st.sidebar:
     page = st.radio(
         "Navigate",
         ["Image Generator",
-         "Video Generator",
          "Google AI Generator",
-         "Prompt Generator",
-         "Image Viewer",
-         "Prompt Manager",
         #  "Audio Generator"
-        "ModelsLab Generator"
+         "ModelsLab Generator",
+         "Video Generator",
+         "Prompt Generator",
+         "Prompt Manager",
+         "Image Viewer",
          ],
         label_visibility="collapsed"
     )

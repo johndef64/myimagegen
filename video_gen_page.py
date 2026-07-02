@@ -559,6 +559,7 @@ def _do_poll(api_key: str):
         _log_event(f"poll_error_{poll_count}", str(e))
         st.session_state.video_gen_error = f"Polling error: {e}"
         st.session_state.video_gen_status = "error"
+        st.session_state.video_gen_running = False
         return
 
     s = status_resp.get("status")
@@ -569,6 +570,9 @@ def _do_poll(api_key: str):
     if s not in terminal:
         return  # still processing — user will press the button again when ready
 
+    # Job reached a terminal state — re-enable the Generate button
+    st.session_state.video_gen_running = False
+
     if s == "completed":
         urls = status_resp.get("unsigned_urls") or []
         if urls:
@@ -577,14 +581,34 @@ def _do_poll(api_key: str):
                 video_url = f"https://openrouter.ai{video_url}"
             _log_event("download_start", {"url": video_url})
             try:
-                resp = requests.get(video_url, stream=True, timeout=120)
+                resp = requests.get(
+                    video_url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    stream=True,
+                    timeout=120,
+                )
                 resp.raise_for_status()
                 video_bytes = resp.content
                 _log_event("download_ok", {"bytes": len(video_bytes)})
                 st.session_state.video_gen_result = video_bytes
                 st.session_state.video_gen_status = "completed"
+
+                # Auto-save to outputs/videos exactly once, right after download
+                saved_path = None
+                if st.session_state.get("video_auto_save", True):
+                    try:
+                        saved_path = _save_video(
+                            video_bytes,
+                            st.session_state.get("video_gen_prompt_used", ""),
+                            st.session_state.get("video_gen_model_used", "video"),
+                        )
+                        _log_event("auto_saved", {"path": saved_path})
+                    except Exception as e:
+                        _log_event("auto_save_error", str(e))
+                st.session_state.video_gen_saved_path = saved_path
+
                 _update_persisted_job(
-                    st.session_state.get("video_gen_job_id", "?"), "completed"
+                    st.session_state.get("video_gen_job_id", "?"), "completed", saved_path
                 )
             except Exception as e:
                 _log_event("download_error", str(e))
@@ -601,6 +625,299 @@ def _do_poll(api_key: str):
         st.session_state.video_gen_status = "error"
         _update_persisted_job(
             st.session_state.get("video_gen_job_id", "?"), s
+        )
+
+
+# ---------------------------------------------------------------------------
+# LAST-FRAME EXTRACTION
+# ---------------------------------------------------------------------------
+def _extract_last_frame(video_bytes: bytes) -> Image.Image:
+    """Decode a video and return its last frame as a PIL Image (RGB)."""
+    import tempfile
+
+    import cv2  # lazy import — only needed by this feature
+
+    # OpenCV needs a real file path, not raw bytes
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+        tmp.write(video_bytes)
+        tmp_path = tmp.name
+
+    try:
+        cap = cv2.VideoCapture(tmp_path)
+        if not cap.isOpened():
+            raise RuntimeError("Could not open the video (unsupported codec/format).")
+
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        last_bgr = None
+        if total > 0:
+            # Seek near the end, then read forward to the actual last decodable frame
+            cap.set(cv2.CAP_PROP_POS_FRAMES, max(total - 5, 0))
+            while True:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                last_bgr = frame
+        if last_bgr is None:
+            # Fallback: frame count unknown or seek failed — scan the whole stream
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            while True:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                last_bgr = frame
+        cap.release()
+
+        if last_bgr is None:
+            raise RuntimeError("No decodable frames found in the video.")
+
+        rgb = cv2.cvtColor(last_bgr, cv2.COLOR_BGR2RGB)
+        return Image.fromarray(rgb)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
+def _last_frame_extractor_box():
+    """UI box: upload a video and extract + save its last frame as an image."""
+    st.subheader("🖼️ Extract Last Frame from Video")
+    st.caption(
+        "Upload a video and grab its last frame — handy as a `last_frame` / "
+        "reference image or to continue a clip in a new generation."
+    )
+
+    up = st.file_uploader(
+        "Upload a video",
+        type=["mp4", "mov", "webm", "mkv", "avi"],
+        key="last_frame_video_upload",
+    )
+    if up is None:
+        return
+
+    if st.button("🎞️ Extract last frame", key="extract_last_frame_btn"):
+        with st.spinner("Decoding video…"):
+            try:
+                frame = _extract_last_frame(up.getvalue())
+            except Exception as e:
+                st.error(f"❌ Could not extract frame: {e}")
+                return
+
+        os.makedirs("outputs/frames", exist_ok=True)
+        stem = os.path.splitext(os.path.basename(up.name))[0]
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = f"{stem}_lastframe_{ts}.png"
+        fpath = os.path.join("outputs/frames", fname)
+        frame.save(fpath)
+
+        # Keep result across reruns so the download button works
+        buf = BytesIO()
+        frame.save(buf, format="PNG")
+        st.session_state["last_frame_result"] = {
+            "png": buf.getvalue(),
+            "path": fpath,
+            "name": fname,
+            "size": frame.size,
+        }
+
+    res = st.session_state.get("last_frame_result")
+    if res:
+        st.image(res["png"], caption=f"Last frame — {res['size'][0]}×{res['size'][1]}")
+        st.success(f"Saved to `{res['path']}`")
+        st.download_button(
+            "⬇️ Download last frame (PNG)",
+            data=res["png"],
+            file_name=res["name"],
+            mime="image/png",
+            key="last_frame_download_btn",
+        )
+
+
+# ---------------------------------------------------------------------------
+# VIDEO MERGING / CONCATENATION
+# ---------------------------------------------------------------------------
+def _ffmpeg_exe() -> str:
+    """Return the ffmpeg executable, preferring imageio's bundled binary."""
+    from shutil import which
+
+    exe = which("ffmpeg")
+    if exe:
+        return exe
+    try:
+        import imageio_ffmpeg  # type: ignore
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"  # last resort — let it fail with a clear error
+
+
+def _probe_resolution(path: str) -> tuple[int, int]:
+    """Read (width, height) of the first video stream via OpenCV."""
+    import cv2
+
+    cap = cv2.VideoCapture(path)
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+    if w <= 0 or h <= 0:
+        raise RuntimeError(f"Could not read resolution of {os.path.basename(path)}")
+    return w, h
+
+
+def _merge_videos(
+    video_files: list[tuple[str, bytes]],
+    out_path: str,
+    *,
+    fps: int = 30,
+) -> str:
+    """
+    Concatenate videos back-to-back (no gaps: last frame of clip N is immediately
+    followed by the first frame of clip N+1) into a single MP4.
+
+    Clips may come from different models with different sizes/fps/codecs, so every
+    input is re-encoded and normalized to a common resolution (that of the first
+    clip), fps and pixel format. Missing audio tracks are padded with silence so
+    the concat filter always gets matching stream layouts.
+    """
+    import subprocess
+    import tempfile
+
+    if len(video_files) < 2:
+        raise ValueError("Need at least 2 videos to merge.")
+
+    tmp_dir = tempfile.mkdtemp(prefix="vidmerge_")
+    tmp_paths: list[str] = []
+    try:
+        for i, (name, data) in enumerate(video_files):
+            ext = os.path.splitext(name)[1] or ".mp4"
+            p = os.path.join(tmp_dir, f"in_{i}{ext}")
+            with open(p, "wb") as f:
+                f.write(data)
+            tmp_paths.append(p)
+
+        # Target resolution = first clip; force even dimensions (H.264 requirement)
+        tw, th = _probe_resolution(tmp_paths[0])
+        tw -= tw % 2
+        th -= th % 2
+
+        ffmpeg = _ffmpeg_exe()
+        cmd: list[str] = [ffmpeg, "-y"]
+        for p in tmp_paths:
+            cmd += ["-i", p]
+
+        # Build filter_complex: normalize each input, then concat v+a
+        n = len(tmp_paths)
+        parts: list[str] = []
+        concat_inputs = ""
+        for i in range(n):
+            # scale keeping AR, pad to target, unify SAR/fps; ensure an audio track
+            parts.append(
+                f"[{i}:v]scale={tw}:{th}:force_original_aspect_ratio=decrease,"
+                f"pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},format=yuv420p[v{i}];"
+                f"[{i}:a?]aresample=async=1[a{i}pre];"
+                f"anullsrc=channel_layout=stereo:sample_rate=48000[a{i}sil];"
+                f"[a{i}pre][a{i}sil]amix=inputs=2:duration=first:dropout_transition=0[a{i}]"
+            )
+            concat_inputs += f"[v{i}][a{i}]"
+        filter_complex = ";".join(parts) + (
+            f";{concat_inputs}concat=n={n}:v=1:a=1[outv][outa]"
+        )
+
+        cmd += [
+            "-filter_complex", filter_complex,
+            "-map", "[outv]", "-map", "[outa]",
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",
+            out_path,
+        ]
+
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if proc.returncode != 0:
+            tail = "\n".join(proc.stderr.strip().splitlines()[-15:])
+            raise RuntimeError(f"ffmpeg failed:\n{tail}")
+        return out_path
+    finally:
+        for p in tmp_paths:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        try:
+            os.rmdir(tmp_dir)
+        except OSError:
+            pass
+
+
+def _video_merger_box():
+    """UI box: upload multiple videos and merge them into one continuous clip."""
+    st.subheader("🎬 Merge Videos (Sequential Concat)")
+    st.caption(
+        "Upload two or more videos to join them back-to-back into one clip — "
+        "the last frame of each is directly followed by the first frame of the "
+        "next, no gaps. Clips are normalized to the first video's resolution, so "
+        "you can mix outputs from different models."
+    )
+
+    ups = st.file_uploader(
+        "Upload videos (order = concat order)",
+        type=["mp4", "mov", "webm", "mkv", "avi"],
+        accept_multiple_files=True,
+        key="merge_videos_upload",
+    )
+    if not ups:
+        return
+
+    st.markdown("**Merge order:**")
+    for i, f in enumerate(ups, 1):
+        st.markdown(f"{i}. `{f.name}`")
+    st.caption("Tip: to reorder, remove the files and re-upload them in the order you want.")
+
+    fps = st.number_input(
+        "Output FPS", min_value=8, max_value=60, value=30, step=1, key="merge_fps"
+    )
+
+    if len(ups) < 2:
+        st.info("Upload at least 2 videos to merge.")
+        return
+
+    if st.button("🔗 Merge videos", key="merge_videos_btn", type="primary"):
+        os.makedirs("outputs/videos", exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = f"merged_{len(ups)}clips_{ts}.mp4"
+        fpath = os.path.join("outputs/videos", fname)
+        video_files = [(f.name, f.getvalue()) for f in ups]
+
+        with st.spinner(f"Merging {len(ups)} videos… (re-encoding, this can take a bit)"):
+            try:
+                _merge_videos(video_files, fpath, fps=int(fps))
+            except Exception as e:
+                st.error(f"❌ Merge failed: {e}")
+                return
+
+        with open(fpath, "rb") as fv:
+            merged_bytes = fv.read()
+        st.session_state["merged_video_result"] = {
+            "bytes": merged_bytes,
+            "path": fpath,
+            "name": fname,
+        }
+
+    res = st.session_state.get("merged_video_result")
+    if res:
+        st.success(f"✅ Merged & saved to `{res['path']}`")
+        st.video(res["bytes"])
+        st.download_button(
+            "⬇️ Download merged video (MP4)",
+            data=res["bytes"],
+            file_name=res["name"],
+            mime="video/mp4",
+            key="merged_video_download_btn",
         )
 
 
@@ -933,6 +1250,7 @@ def show_video_generator_page():
 
             # Reset state
             st.session_state.video_gen_result = None
+            st.session_state.video_gen_saved_path = None
             st.session_state.video_gen_error = None
             st.session_state.video_gen_status = "Starting..."
             st.session_state.video_gen_running = True
@@ -1022,15 +1340,19 @@ def show_video_generator_page():
                 if cost:
                     st.markdown(f"**Estimated Cost:** {cost}")
 
-            # Auto-save
-            saved_path = None
-            if auto_save_video:
+            # Auto-save already happened once in _do_poll — just show where it went.
+            saved_path = st.session_state.get("video_gen_saved_path")
+            if saved_path:
+                st.caption(f"💾 Auto-saved to `{saved_path}`")
+            elif auto_save_video:
+                # Fallback: save now if it wasn't saved during polling (e.g. old job)
                 try:
                     saved_path = _save_video(
                         video_bytes,
                         st.session_state.video_gen_prompt_used,
                         st.session_state.video_gen_model_used,
                     )
+                    st.session_state.video_gen_saved_path = saved_path
                     st.caption(f"💾 Auto-saved to `{saved_path}`")
                 except Exception as e:
                     st.warning(f"Auto-save failed: {e}")
@@ -1104,6 +1426,14 @@ def show_video_generator_page():
                 if st.button("📋 Use this prompt", key="video_qpg_use_btn"):
                     st.session_state["video_llm_enhanced_prompt"] = qpg_res
                     st.rerun()
+
+    # ── Extract last frame from an uploaded video ───────────────────────────
+    st.divider()
+    _last_frame_extractor_box()
+
+    # ── Merge / concatenate multiple videos ─────────────────────────────────
+    st.divider()
+    _video_merger_box()
 
     # ── Generation History ──────────────────────────────────────────────────
     st.divider()
