@@ -734,6 +734,16 @@ def _last_frame_extractor_box():
 
 
 # ---------------------------------------------------------------------------
+# UI HELPERS
+# ---------------------------------------------------------------------------
+def _small_video(data, *, key: str | None = None):
+    """Render a video preview constrained to ~1/3 of the page width."""
+    col, _ = st.columns([1, 2])
+    with col:
+        st.video(data)
+
+
+# ---------------------------------------------------------------------------
 # VIDEO MERGING / CONCATENATION
 # ---------------------------------------------------------------------------
 def _ffmpeg_exe() -> str:
@@ -911,7 +921,7 @@ def _video_merger_box():
     res = st.session_state.get("merged_video_result")
     if res:
         st.success(f"✅ Merged & saved to `{res['path']}`")
-        st.video(res["bytes"])
+        _small_video(res["bytes"])
         st.download_button(
             "⬇️ Download merged video (MP4)",
             data=res["bytes"],
@@ -1446,7 +1456,7 @@ def show_video_generator_page():
             idx = len(hist) - i
             label = f"#{idx} — {entry['timestamp']} — {entry['model'].split('/')[-1]} — {entry['prompt'][:60]}..."
             with st.expander(label, expanded=(i == 0)):
-                st.video(entry["video_bytes"])
+                _small_video(entry["video_bytes"])
                 st.markdown(f"**Model:** `{entry['model']}`")
                 st.markdown(f"**Prompt:** {entry['prompt']}")
                 for k, v in entry["params"].items():
@@ -1562,7 +1572,7 @@ def show_video_generator_page():
                     if job.get("saved_path") and os.path.exists(job["saved_path"]):
                         st.success(f"Already saved locally: `{job['saved_path']}`")
                         with open(job["saved_path"], "rb") as fv:
-                            st.video(fv.read())
+                            _small_video(fv.read())
 
                     poll_url = job.get("polling_url", "")
 
@@ -1620,7 +1630,7 @@ def show_video_generator_page():
                                         st.session_state["video_recover_jobs"] = jobs
                                         _update_persisted_job(jid, "completed", fpath)
                                         st.success(f"Saved to `{fpath}`")
-                                        st.video(vbytes)
+                                        _small_video(vbytes)
                                         st.download_button(
                                             "⬇️ Save to computer",
                                             data=vbytes,
