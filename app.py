@@ -63,6 +63,58 @@ OPENROUTER_IMAGE_MODELS = {
 }
 default_model = "gemini-3.1-flash-image-preview" #"gemini-2.5-flash-image"
 
+# Direct provider model lists
+OPENAI_IMAGE_MODELS = {
+    "gpt-image-1": "gpt-image-1",
+    "gpt-image-1-mini": "gpt-image-1-mini",
+    "dall-e-3": "dall-e-3",
+}
+
+XAI_IMAGE_MODELS = {
+    "grok-2-image": "grok-2-image",
+    "grok-2-image-1212": "grok-2-image-1212",
+}
+
+GEMINI_IMAGE_MODELS = {
+    "gemini-2.5-flash-image": "gemini-2.5-flash-image",
+    "gemini-3-pro-image-preview": "gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview": "gemini-3.1-flash-image-preview",
+}
+
+# Provider registry: base_url + api key name (in api_keys.json) + models.
+# api_type "chat" = OpenAI-compatible chat.completions payload (same builder as OpenRouter);
+# api_type "images" = provider only exposes images.generate/edit for image models.
+PROVIDERS = {
+    "OpenRouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "key_name": "openrouter",
+        "api_type": "chat",
+        "models": OPENROUTER_IMAGE_MODELS,
+        "default_model": default_model,
+    },
+    "Google (Gemini)": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "key_name": "gemini",
+        "api_type": "chat",
+        "models": GEMINI_IMAGE_MODELS,
+        "default_model": "gemini-2.5-flash-image",
+    },
+    "OpenAI": {
+        "base_url": "https://api.openai.com/v1",
+        "key_name": "openai",
+        "api_type": "images",
+        "models": OPENAI_IMAGE_MODELS,
+        "default_model": "gpt-image-1",
+    },
+    "xAI": {
+        "base_url": "https://api.x.ai/v1",
+        "key_name": "xai",
+        "api_type": "images",
+        "models": XAI_IMAGE_MODELS,
+        "default_model": "grok-2-image",
+    },
+}
+
 # Implemtare la posiblità di fare vidoe geenation nella stessa app di base basata su Openrouter, con tutti i modelli video di Openrouter, in una sezione dedicata, con le stesse identiche funzionalità di prompt enhancer, prompt manager, e visualizzatore di immagini generate, ma per i video.
 
 # lo switch alla versione viedo puo essre fatto seplicemtne da barra laterale dove ci sarà la scelta del modello e di paramteri in una sezione per Video, seconbdi, risoluzione, audio etc
@@ -230,16 +282,13 @@ ASPECT_RATIOS = {
 }
 
 # Helper functions
-def load_api_key():
-    """Load API key from api_keys.json or session state"""
-    if 'api_key' in st.session_state and st.session_state.api_key:
-        return st.session_state.api_key
-    
+def load_api_key(key_name="openrouter"):
+    """Load a provider API key from api_keys.json"""
     if os.path.exists("api_keys.json"):
         try:
             with open("api_keys.json", 'r') as f:
                 api_dict = json.load(f)
-                return api_dict.get("openrouter", "")
+                return api_dict.get(key_name, "") or ""
         except:
             return ""
     return ""
@@ -371,11 +420,11 @@ def flatten_prompts(prompts_data):
     
     return flattened
 
-def get_client(api_key):
-    """Initialize OpenRouter client"""
+def get_client(api_key, base_url="https://openrouter.ai/api/v1"):
+    """Initialize an OpenAI-compatible client for the selected provider"""
     return OpenAI(
         api_key=api_key,
-        base_url="https://openrouter.ai/api/v1"
+        base_url=base_url
     )
 
 def encode_image_to_base64(image):
@@ -415,27 +464,94 @@ def resize_image(image, max_size=1024):
         new_width = int(width * (max_size / height))
     return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
-def generate_image(prompt, api_key, model_name, aspect_ratio, seed, reference_images=None, 
-                   use_image_aspect_ratio=False, max_image_size=1024):
-    """Generate image using OpenRouter API"""
-    
+def aspect_ratio_to_size(aspect_ratio, model_name):
+    """Map an aspect ratio to the closest size supported by the images API"""
+    wide = {"3:2", "4:3", "5:4", "16:9", "21:9"}
+    tall = {"2:3", "3:4", "4:5", "9:16"}
+    if model_name.startswith("dall-e"):
+        if aspect_ratio in wide:
+            return "1792x1024"
+        if aspect_ratio in tall:
+            return "1024x1792"
+        return "1024x1024"
+    if aspect_ratio in wide:
+        return "1536x1024"
+    if aspect_ratio in tall:
+        return "1024x1536"
+    return "1024x1024"
+
+def generate_image_via_images_api(client, prompt, model_name, aspect_ratio,
+                                  reference_images, max_image_size, base_url):
+    """Generate via the images.generate/edit endpoint (OpenAI, xAI)"""
+    is_xai = "x.ai" in base_url
+
+    kwargs = {"model": model_name, "prompt": prompt, "n": 1}
+    if is_xai:
+        # xAI images API does not support size/seed
+        kwargs["response_format"] = "b64_json"
+    else:
+        kwargs["size"] = aspect_ratio_to_size(aspect_ratio, model_name)
+        if model_name.startswith("dall-e"):
+            kwargs["response_format"] = "b64_json"
+
+    if reference_images and not is_xai and not model_name.startswith("dall-e"):
+        # gpt-image models support edits with reference images
+        image_files = []
+        for i, img in enumerate(reference_images):
+            resized = resize_image(img, max_size=max_image_size)
+            buf = BytesIO()
+            resized.save(buf, format="PNG")
+            buf.seek(0)
+            buf.name = f"reference_{i}.png"
+            image_files.append(buf)
+        result = client.images.edit(
+            image=image_files if len(image_files) > 1 else image_files[0],
+            **kwargs
+        )
+    else:
+        result = client.images.generate(**kwargs)
+
+    data = result.data[0]
+    if getattr(data, "b64_json", None):
+        image = Image.open(BytesIO(base64.b64decode(data.b64_json)))
+    elif getattr(data, "url", None):
+        import urllib.request
+        with urllib.request.urlopen(data.url) as resp:
+            image = Image.open(BytesIO(resp.read()))
+    else:
+        return None, aspect_ratio, {"text": str(result), "finish_reason": None, "attrs": []}
+
+    return image, aspect_ratio
+
+def generate_image(prompt, api_key, model_name, aspect_ratio, seed, reference_images=None,
+                   use_image_aspect_ratio=False, max_image_size=1024,
+                   base_url="https://openrouter.ai/api/v1", api_type="chat"):
+    """Generate image using the selected provider (same payload builder for all chat endpoints)"""
+
     if not seed:
         seed = random.randint(1, 1000000)
-    
-    client = get_client(api_key)
-    
+
+    client = get_client(api_key, base_url)
+
+    # Use first image aspect ratio if enabled
+    if reference_images and use_image_aspect_ratio:
+        aspect_ratio = get_image_aspect_ratio(reference_images[0])
+
+    # Providers without chat-based image output use the images endpoint
+    if api_type == "images":
+        return generate_image_via_images_api(
+            client, prompt, model_name, aspect_ratio,
+            reference_images, max_image_size, base_url
+        )
+
     # Build message content
     user_message = {
         "role": "user",
         "content": [{"type": "text", "text": prompt}]
     }
-    
+
     # Process reference images if provided
     if reference_images:
-        # Use first image aspect ratio if enabled
-        if use_image_aspect_ratio and len(reference_images) > 0:
-            aspect_ratio = get_image_aspect_ratio(reference_images[0])
-        
         for img in reference_images:
             # Resize image if needed
             resized_img = resize_image(img, max_size=max_image_size)
@@ -471,7 +587,10 @@ def generate_image(prompt, api_key, model_name, aspect_ratio, seed, reference_im
             },
             "safety_settings": SAFETY_SETTINGS_OFF
         }
-    
+    elif model_name.startswith("gemini"):
+        # Direct Google OpenAI-compat endpoint: only modalities is accepted
+        PARAM = {"modalities": ["image", "text"]}
+
     print("Generating with params:", PARAM)
 
     response_full = client.chat.completions.create(
@@ -656,6 +775,7 @@ with st.sidebar:
         #  "Audio Generator"
          "ModelsLab Generator",
          "Video Generator",
+         "Xai Video Generator",
          "Prompt Generator",
          "Prompt Manager",
          "Image Viewer",
@@ -667,6 +787,11 @@ with st.sidebar:
 if page == "Video Generator":
     import video_gen_page
     video_gen_page.show_video_generator_page()
+    st.stop()
+
+if page == "Xai Video Generator":
+    import video_gen_page_xai
+    video_gen_page_xai.show_video_generator_page()
     st.stop()
 
 if page == "Google AI Generator":
@@ -705,32 +830,48 @@ if page == "ModelsLab Generator":
     st.stop()
 
 # Main UI
-st.title("🎨 OpenRouter Image Generator")
-st.markdown("Generate images using OpenRouter API with customizable parameters")
+st.title("🎨 Image Generator")
+st.markdown("Generate images using OpenRouter, OpenAI, xAI or Google APIs with customizable parameters")
 
 # Sidebar - Configuration
 with st.sidebar:
     st.subheader("⚙️ Configuration")
-    
-    # API Key input
+
+    # Provider selection
+    selected_provider = st.selectbox(
+        "Provider",
+        options=list(PROVIDERS.keys()),
+        index=0,
+        help="Choose the image generation API provider"
+    )
+    provider_cfg = PROVIDERS[selected_provider]
+
+    # API Key input (per provider, preloaded from api_keys.json)
+    _key_state = f"api_key_{provider_cfg['key_name']}"
+    if _key_state not in st.session_state:
+        st.session_state[_key_state] = load_api_key(provider_cfg["key_name"])
     api_key_input = st.text_input(
-        "OpenRouter API Key",
-        value=st.session_state.api_key,
+        f"{selected_provider} API Key",
         type="password",
-        help="Enter your OpenRouter API key"
+        key=_key_state,
+        help=f"Loaded from api_keys.json (key '{provider_cfg['key_name']}')"
     )
     st.session_state.api_key = api_key_input
-    
+
     st.divider()
-    
-    # Model selection
+
+    # Model selection (per provider)
     st.subheader("Model Settings")
+    provider_models = provider_cfg["models"]
     selected_model = st.selectbox(
         "Model",
-        options=list(OPENROUTER_IMAGE_MODELS.keys()),
-        index=list(OPENROUTER_IMAGE_MODELS.keys()).index(default_model),
+        options=list(provider_models.keys()),
+        index=list(provider_models.keys()).index(provider_cfg["default_model"]),
+        key=f"model_select_{selected_provider}",
         help="Choose the image generation model"
     )
+    if provider_cfg["api_type"] == "images" and "x.ai" in provider_cfg["base_url"]:
+        st.caption("⚠️ xAI images API ignores aspect ratio, seed and reference images")
     
     # Aspect ratio
     use_auto_aspect = st.checkbox(
@@ -1109,14 +1250,14 @@ with col2:
     
     if generate_btn:
         if not st.session_state.api_key:
-            st.error("❌ Please enter your OpenRouter API key in the sidebar")
+            st.error(f"❌ Please enter your {selected_provider} API key in the sidebar")
         elif not prompt:
             st.error("❌ Please enter a prompt")
         else:
             with st.spinner("Generating image..."):
                 try:
-                    model_full_name = OPENROUTER_IMAGE_MODELS[selected_model]
-                    
+                    model_full_name = provider_cfg["models"][selected_model]
+
                     _result = generate_image(
                         prompt=prompt,
                         api_key=st.session_state.api_key,
@@ -1125,7 +1266,9 @@ with col2:
                         seed=seed,
                         reference_images=reference_images,
                         use_image_aspect_ratio=use_auto_aspect,
-                        max_image_size=max_image_size
+                        max_image_size=max_image_size,
+                        base_url=provider_cfg["base_url"],
+                        api_type=provider_cfg["api_type"]
                     )
                     generated_image = _result[0]
                     used_aspect_ratio = _result[1]

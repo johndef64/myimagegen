@@ -7,6 +7,7 @@ import time
 
 # custom scripts
 from mlslab_utils import *
+from prompt_manager_page import load_yaml_file
 
 print("Working directory:", os.getcwd())
 
@@ -16,8 +17,10 @@ folder = "../images/"
 handle = "image"
 image_files = get_images_paths(folder, handle=handle)
 
+folder = "../images\Posers\Full Body (ref)"
+handle = "814659020137855813"
 folder = "../images/fem/bellezze"
-# folder = "../images\Posers\Full Body (ref)"
+folder = "G:\\Altri computer\\Horizon\\horizon_workspace\\ai-gen\\ai-art\\my-art\\my-lora\\lora_diana\\lora_train\\training_set_82"
 
 import os
 def clean_filenames_in_folder(folder):
@@ -28,11 +31,25 @@ def clean_filenames_in_folder(folder):
             os.rename(os.path.join(folder, filename), os.path.join(folder, new_filename))
             # print(f"Renamed: {filename} -> {new_filename}")
 
-show_folder_images_thumbnails(folder, max_images=5, thumb_size=(10, 10))
+show_folder_images_thumbnails(folder, max_images=15, thumb_size=(10, 10))
 
 #%%
+# get prompts_custom.yaml
+prompts = load_yaml_file("..\prompts\prompts_custom.yaml")
+promptc = prompts["edit_prompts"]["realism"][2]#.keys()
+promptc
+#%%
 
-# handle = "814659020137855813"
+
+handles = {
+    0: "melikedhn",
+    1: "rapuanomarisa",
+    2: "mellaanniee",
+    3: "veronicacanova",
+    4: "siimonalucio",
+    5: "erikaprinzi"
+}
+handle = "14"
 image_files = get_images_paths(folder, handle=handle)
 
 
@@ -56,7 +73,15 @@ len(image_files), local_image_path
 # Configurazione
 prompt = "The person is holding a red apple. Professional photography, high detail, sharp focus, professional lighting, 8k"
 
+prompt1= "Close-up of an Italian woman, 20 years old, with dark brown hair. Brown-black eyes with eyeliner and mascara, and parted glossy lips painted in a deep, seductive shade of brown. Large, round eyes and full, provocative lips. Provocative and erotic allure of her expression. Her perfect hands are visible, with long, square-shaped glossy black nails. Natural light."
+prompt = "The girl is showing her perfect squared red nails to the camera. Fetish photography, high detail, sharp focus, professional lighting, 8k"
+prompt = "The girl is holding a red apple with her perfect squared red nails. Fetish photography, high detail, sharp focus, professional lighting, 8k"
+prompt = "The girl is holding a dark red apple with her perfect squared dark red nails. She has multile silver rings. Fetish photography, high detail, sharp focus, professional lighting, 8k"
+prompt = "The girl is holding a red apple with her perfect squared red nails. She has multile silver rings. Fetish style photography, high detail, sharp focus, professional lighting, 8k"
+prompt = "The girl is holding a purple apple with her perfect squared purple nails. She has multile silver rings. Fetish style photography, high detail, sharp focus, professional lighting, 8k"
 
+prompt = "Create a pencil pose sketch reference, with clean simple lines. Do not draw other elements like hair, face or clothes, just the sketch of the pose with simple geometric pencil lines."
+prompt = promptc
 
 SizeImageDict = {
 # square
@@ -88,6 +113,7 @@ def create_image_qwen_retry(*args, **kwargs):
 def create_image_v6_retry(*args, **kwargs):
     max_retries = 5
     result = None
+    retries = 0
     while not result:
         result = create_image_v6(*args, **kwargs)
     
@@ -143,7 +169,7 @@ for res in results:
         response = requests.get(output_link)
         base64_data = response.text
         from IPython.display import display, Image
-        display(Image(data=base64.b64decode(base64_data), width=20, height=20))
+        display(Image(data=base64.b64decode(base64_data), width=100, height=100))
 #%%
 
 #%%  %%%%%%%%%%%%

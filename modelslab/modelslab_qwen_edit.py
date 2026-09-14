@@ -15,8 +15,16 @@ def encode_image_to_base64_prefix(image_path):
         # Aggiungi il prefisso data URI
         return f"data:image/jpeg;base64,{encoded}"
 
-def encode_image_to_base64(image_path):
+def encode_image_to_base64(image_path, resize=None):
     """Converte un'immagine locale in stringa base64"""
+    if resize:
+        # ridimensiona l'immagine prima di convertire in base64
+        new_width, new_height, resized_img = resize_image_to_megapixels(image_path, target_mp=resize)
+        from io import BytesIO
+        buffered = BytesIO()
+        resized_img.save(buffered, format="JPEG")
+        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+    
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
@@ -31,6 +39,19 @@ def update_results_file(result, urls_file="qwen_edit_results.json"):
             if img_url:                 # skip empty strings
                 request_id = result.get("id", "unknown")
                 f.write(img_url.strip() + f"\n- Request ID: {request_id}\n")
+
+def update_requests_file(result, urls_file="requests_list.txt"):
+    if not os.path.exists(urls_file):
+        with open(urls_file, "w", encoding="utf-8") as f:
+            f.write("# Qwen Edit Requests\n")
+    # All image URLs must be saved in a text file, appending line-by-line
+    """Aggiorna il file di testo con gli URL delle immagini modificate"""
+    with open(urls_file, "a", encoding="utf-8") as f:
+        # prima aggiungi la riga della data
+        from datetime import datetime
+        f.write(f"\n# Requests on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        request_id = result.get("id", "miss")
+        f.write(str(request_id))
 
 def update_urls_file_all(results, urls_file="edited_image_urls.txt"):
     # All image URLs must be saved in a text file, appending line-by-line
@@ -72,14 +93,19 @@ for filename in os.listdir(folder):
         os.rename(os.path.join(folder, filename), os.path.join(folder, new_filename))
         # print(f"Renamed: {filename} -> {new_filename}")
 
-# show_folder_images_thumbnails("../images/")
+show_folder_images_thumbnails("../images/fem/bellezze/")
 
 #%%
 import glob
 handle = "image"
 image_files = glob.glob(f"../images/*{handle}*")
 
-
+handle = "melikedhn"
+handle = "rapuanomarisa"
+handle = "mellaanniee"
+handle = ""
+image_files = glob.glob(f"../images/fem/bellezze/*{handle} - DQy3sbHDLgT*")
+image_files = glob.glob(f"../images/fem/bellezze/*{handle}*")
 
 # Percorso della tua immagine locale
 local_image_path = image_files[1]
@@ -139,6 +165,7 @@ def edit_image_with_qwen_base64(image_base64,
     
     response = requests.post(url, headers=headers, json=data)
     response.raise_for_status()
+    update_requests_file(response.json(), urls_file="requests_list.txt")
     return response.json()
 
 
@@ -153,8 +180,19 @@ with open(api_key_path, "r", encoding="utf-8") as f:
 prompt = "The person is holding a red apple. Professional photography, high detail, sharp focus, professional lighting, 8k"
 
 
+prompt1= "Close-up of an Italian woman, 20 years old, with dark brown hair. Brown-black eyes with eyeliner and mascara, and parted glossy lips painted in a deep, seductive shade of brown. Large, round eyes and full, provocative lips. Provocative and erotic allure of her expression. Her perfect hands are visible, with long, square-shaped glossy black nails. Natural light."
+prompt = "The girl is showing her perfect squared red nails to the camera. Fetish photography, high detail, sharp focus, professional lighting, 8k"
+prompt = "The girl is holding a red apple with her perfect squared red nails. Fetish photography, high detail, sharp focus, professional lighting, 8k"
+prompt = "The girl is holding a dark red apple with her perfect squared dark red nails. She has multile silver rings. Fetish photography, high detail, sharp focus, professional lighting, 8k"
+prompt = "The girl is holding a red apple with her perfect squared red nails. She has multile silver rings. Fetish photography, high detail, sharp focus, professional lighting, 8k"
 results = []
+
+
+# Pay as you go plan 5 queued API requests
+image_files = image_files[19:22]
 for local_image_path in image_files:
+    
+    print(f"\n---\nModifica immagine: {local_image_path}")
     try:
         #get with and height
         from image_params import resize_image_to_megapixels
@@ -163,7 +201,7 @@ for local_image_path in image_files:
 
         # Step 1: Converti in base64
         print("Conversione immagine in base64...")
-        base64_image = encode_image_to_base64(local_image_path)
+        base64_image = encode_image_to_base64(local_image_path, resize=1.0)
         base64_url = f"data:image/jpeg;base64,{base64_image}"
 
         # Step 3: Modifica con Qwen Edit
@@ -177,17 +215,15 @@ for local_image_path in image_files:
                                     width=new_width,
                                     height=new_height)
 
-        time.sleep(1)
-        result
+        
 
         results.append(result)
+
         print("\n✓ Risultato:")
-        # from json print remove "init_image" key to avoid huge output
-        if "init_image_1" in result:
-            json_print = {k: v for k, v in result.items() if not k.startswith("init_image")}
-        else:
-            json_print = result
-        print(json.dumps(json_print, indent=2))
+        print(result.get("status"))
+        # Step 4: Aggiorna il file dei risultati
+        update_requests_file(result, urls_file="requests_list.txt")
+        time.sleep(1)
         
     except requests.exceptions.HTTPError as http_err:
         print(f"HTTP error: {http_err}")
@@ -196,7 +232,7 @@ for local_image_path in image_files:
         print(f"Errore: {err}")
 
 #%%
-
+############################################################
 #update results file
 update_urls_file_all(results, urls_file="edited_image_urls.txt")
 
@@ -220,8 +256,8 @@ def save_base64_images(results, folder="edited_images"):
                     img_file.write(img_data)
                 print(f"✓ Salvata immagine base64 in: {file_path}")
 
-def save_base64_from_url(img_url, save_path):
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+def save_base64_from_url(img_url, folder):
+    os.makedirs(os.path.dirname(folder), exist_ok=True)
     """Salva un'immagine in base64 da un URL in un file locale"""
     import requests
     if img_url:
@@ -233,9 +269,12 @@ def save_base64_from_url(img_url, save_path):
             base64_data = base64_data.split(",")[1]
         
         img_data = base64.b64decode(base64_data)
-        with open(save_path, "wb") as img_file:
+
+        file_path = os.path.join(folder, f"edited_image_{i}_{j}_{timestamp}.png")
+
+        with open(file_path, "wb") as img_file:
             img_file.write(img_data)
-        print(f"✓ Salvata immagine base64 da URL in: {save_path}")
+        print(f"✓ Salvata immagine base64 da URL in: {file_path}")
     else:
         print("URL immagine vuoto, impossibile salvare.")
 
@@ -245,40 +284,35 @@ def save_base64_from_url(img_url, save_path):
 print(f"\n✓ Immagini modificate: {len(results)}")
 for res in results:
     if True: #res.get("status") != "success":
-        img_url = res.get("future_links")[0]
+        future_link = res.get("future_links")[0]
+        request_id = res.get("id", "unknown")
+
         # img_base64 = res.get("output_base64")[0]
-        print(f"Image URL: {img_url}")
+        print(f"Image URL: {future_link}")
         # print(f"Image Base64 (first 100 chars): {img_base64[:10]}...")
         # show thimb 50X50
-        timestamp = "_" + str(int(time.time()))
-        timestamp = ""
         if use_base64:
             print("Decoding base64 image from URL...")
             # l url contine in base64 -> get base from url content
             # Image URL: https://pub-3626123a908346a7a8be8d9295f44e26.r2.dev/temp/5784eebc-54b1-4f85-95ef-ccc2d382046c-0.base64
             # use request to get the
-            response = requests.get(img_url)
+            response = requests.get(future_link)
             base64_data = response.text
             print(f"Image Base64 (first 100 chars): {base64_data[:100]}...")
 
             if "<!DOCTYPE html>" not in base64_data:
-                save_base64_from_url(img_url, save_path=f"edited_images/edited_image_{results.index(res)}{timestamp}.png")
+                save_base64_from_url(future_link, save_path=f"edited_images/edited_image_{results.index(res)}{timestamp}.png")
                 from IPython.display import display, Image
                 # display(Image(data=base64.b64decode(base64_data), width=50, height=50))
         else:
             from IPython.display import display, Image
-            display(Image(url=img_url, width=50, height=50))
+            display(Image(url=future_link, width=50, height=50))
 
 # results[0]  
 #%%
-image_files
-results
-
 # show dashborad images in ModelsLab using api
-
 import requests
 import json
-
 
 def fetch_queued_image_community(api_key, request_id):
     """
@@ -305,22 +339,78 @@ def fetch_queued_image_community(api_key, request_id):
     response = requests.post(url, headers=headers, data=payload)
     return response.json()
 
+def save_base64_image_from_reqestod(img_url, request_id, folder="fetched_images"):
+    """Salva un'immagine in base64 da un URL in un file locale"""
+    import os
+    import requests
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    
+    if img_url:
+        response = requests.get(img_url)
+        response.raise_for_status()
+        base64_data = response.text
+        # Rimuovi il prefisso data URI se presente
+        if base64_data.startswith("data:image"):
+            base64_data = base64_data.split(",")[1]
+        
+        img_data = base64.b64decode(base64_data)
+
+        file_path = os.path.join(folder, f"fetched_image_{request_id}.png")
+
+        with open(file_path, "wb") as img_file:
+            img_file.write(img_data)
+        print(f"✓ Salvata immagine base64 da URL in: {file_path}")
+    else:
+        print("URL immagine vuoto, impossibile salvare.")
+
+def get_requestsid_from_file(file_name="requests_list.txt"):
+    """Legge gli ID delle richieste da un file di testo"""
+    request_ids = []
+    if os.path.exists(file_name):
+        with open(file_name, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):  # Assuming request IDs start with '168'
+                    request_ids.append(line)
+    return request_ids
+
 # Esempio d'uso
 api_key = api_key
 request_id = "168491544"  # ID ricevuto quando hai generato l'immagine
 
-result = fetch_queued_image_community(api_key, request_id)
-print(result)
-result["output"]
-# Response example:
-# {
-#   "status": "success",
-#   "id": 13443927,
-#   "output": [
-#     "https://pub-8b49af329fae499aa563997f5d4068a4.r2.dev/generations/6ef3f81f-14e1-4835-b07a-e00dbe80b6ff-0.png"
-#   ]
-# }
-response = requests.get(result["output"][0])
-base64_data = response.text
-print(f"Image Base64 (first 100 chars): {base64_data[:100]}...")
-display(Image(data=base64.b64decode(base64_data), width=50, height=50))
+# get list of file in fetch folder
+already_fetched = os.listdir("fetched_images")
+
+print(f"\n---\nFetching image for Request ID: {request_id}")
+for request_id in get_requestsid_from_file(file_name="requests_list.txt"):
+    if request_id != "miss":
+        print(f"\n---\nFetching image for Request ID: {request_id}")
+        result = fetch_queued_image_community(api_key, request_id)
+        print(result)
+        result["output"]
+        # Response example:
+        # {
+        #   "status": "success",
+        #   "id": 13443927,
+        #   "output": [
+        #     "https://pub-8b49af329fae499aa563997f5d4068a4.r2.dev/generations/6ef3f81f-14e1-4835-b07a-e00dbe80b6ff-0.png"
+        #   ]
+        # }
+        # if not already fetched
+        if f"fetched_image_{request_id}.png" in already_fetched:
+            print(f"✓ Immagine già scaricata per Request ID: {request_id}, salto il download.")
+            continue
+        if result.get("status") != "failed" and result.get("status") != "processing":
+            response = requests.get(result["output"][0])
+            base64_data = response.text
+            print(f"Image Base64 (first 100 chars): {base64_data[:100]}...")
+            display(Image(data=base64.b64decode(base64_data), width=50, height=50))
+
+            # save image
+            save_base64_image_from_reqestod(result["output"][0], request_id, folder="fetched_images")
+
+
+#%%
+# update_requests_file(results, file_name="requests_list.txt")
+get_requestsid_from_file(file_name="requests_list.txt")

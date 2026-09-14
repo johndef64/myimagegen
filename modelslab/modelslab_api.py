@@ -337,8 +337,12 @@ class ModelCapability:
 # V6 models - support both txt2img and img2img (except noted)
 V6_MODELS = [
     "qwen", "z-image-turbo", "z-image-base", "flux", "fluxdev", 
-    "flux-2-dev", "flux-kontext-dev", "flux-klein"
+    "flux-2-dev", "flux-kontext-dev", "flux-klein",
+    "hidream-o1", "krea-2-turbo"
 ]
+
+# Models that ONLY support txt2img (no img2img)
+TXT2IMG_ONLY_MODELS = ["krea-2-turbo"]
 
 # V7 models (use different endpoints)
 V7_MODELS = [
@@ -358,6 +362,13 @@ IMG2IMG_ONLY_MODELS = ["flux-kontext-dev"]
 
 # Models that require scheduler field for img2img
 SCHEDULER_REQUIRED_FOR_IMG2IMG = ["flux", "fluxdev", "flux-2-dev", "flux-klein"]
+
+# Payload whitelist for hosted V6 models that reject sampler params
+# (num_inference_steps, guidance_scale, scheduler, lora, enhance_prompt...)
+MINIMAL_V6_PARAMS = {
+    "key", "prompt", "model_id", "init_image", "negative_prompt",
+    "strength", "width", "height", "seed", "samples", "base64",
+}
 
 # Model configurations with default parameters
 MODEL_CONFIGS = {
@@ -520,13 +531,26 @@ MODEL_CONFIGS = {
         "init_image_as_list": True,
     },
     # === HiDream Models ===
+    # Hosted model: sending num_inference_steps / guidance_scale / scheduler
+    # produces pure noise -> whitelist only the documented params.
     "hidream-o1": {
-        "num_inference_steps": 20,
+        "strength": 0.7,
+        "api_version": "v6",
+        "endpoint_txt2img": Endpoint.TXT2IMG,
+        "endpoint_img2img": Endpoint.IMG2IMG,
+        "supports_txt2img": True,
+        "supports_img2img": True,
+        "init_image_as_list": True,
+        "allowed_params": MINIMAL_V6_PARAMS,
+    },
+    # === Krea Models ===
+    "krea-2-turbo": {
         "api_version": "v6",
         "endpoint_txt2img": Endpoint.TXT2IMG,
         "supports_txt2img": True,
-        "supports_img2img": False,
+        "supports_img2img": False,  # txt2img only
         "init_image_as_list": True,
+        "allowed_params": MINIMAL_V6_PARAMS,
     },
     # === NanoBanana Models ===
     "nanobanana-lite-pretrained": {
@@ -593,6 +617,14 @@ def model_requires_init_image_as_string(model_id: str) -> bool:
     """Check if model requires init_image as string (not list)."""
     config = get_model_config(model_id)
     return not config.get("init_image_as_list", True)
+
+
+def filter_payload_for_model(payload: Dict[str, Any], model_id: str) -> Dict[str, Any]:
+    """Drop keys not in the model's `allowed_params` whitelist (if defined)."""
+    allowed = get_model_config(model_id).get("allowed_params")
+    if not allowed:
+        return payload
+    return {k: v for k, v in payload.items() if k in allowed}
 
 
 def model_requires_scheduler(model_id: str) -> bool:
@@ -983,7 +1015,7 @@ class PayloadBuilder:
         
         # Add any extra kwargs
         payload.update(kwargs)
-        return payload
+        return filter_payload_for_model(payload, model_id)
     
     def build_img2img_payload(
         self,
@@ -1052,7 +1084,7 @@ class PayloadBuilder:
         
         # Add any extra kwargs
         payload.update(kwargs)
-        return payload
+        return filter_payload_for_model(payload, model_id)
     
     def build_qwen_edit_payload(
         self,

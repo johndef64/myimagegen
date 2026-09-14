@@ -87,6 +87,10 @@ st.set_page_config(
 # MODEL HELPERS
 # ============================================================================
 
+# session_key of the "Select from images folder" widget (utils.render_image_selector)
+FOLDER_SELECTOR_KEY = "mslab_img_selector"
+
+
 def is_qwen_edit_model(model_id: Optional[str]) -> bool:
     if not model_id:
         return False
@@ -678,9 +682,11 @@ def show_modelslab_generator_page():
         )
 
         # Auto-derive generation mode from model + reference state.
-        # Refs come from file_uploader (session_state), V7 URL paste, or cached imgBB URLs.
+        # Refs come from file_uploader, folder selector (both in session_state),
+        # V7 URL paste, or cached imgBB URLs.
         _ref_files = st.session_state.get("mslab_ref_uploader") or []
-        _has_ref = bool(_ref_files) or bool(st.session_state.get("imgbb_urls"))
+        _folder_refs = st.session_state.get(f"{FOLDER_SELECTOR_KEY}_selected") or []
+        _has_ref = bool(_ref_files) or bool(_folder_refs) or bool(st.session_state.get("imgbb_urls"))
         generation_mode = derive_generation_mode(selected_model, _has_ref)
         st.caption(f"🔀 Mode: **{generation_mode}** (auto)")
         
@@ -1242,10 +1248,6 @@ def show_modelslab_generator_page():
                     key="mslab_ref_uploader"
                 )
 
-                if not uploaded_files:
-                    # Clear cached imgBB URLs if user removed all files
-                    st.session_state.pop("imgbb_urls", None)
-
                 if uploaded_files:
                     max_refs = 4 if generation_mode == "Qwen Edit" else len(uploaded_files)
                     if generation_mode == "Qwen Edit" and len(uploaded_files) > max_refs:
@@ -1268,44 +1270,52 @@ def show_modelslab_generator_page():
                             st.caption(f"Size: {img.size[0]}×{img.size[1]}")
 
                 with st.expander("📂 Select from images folder", expanded=False):
-                    folder_imgs = render_image_selector(session_key="mslab_img_selector", stealth_mode=stealth_mode)
+                    folder_imgs = render_image_selector(session_key=FOLDER_SELECTOR_KEY, stealth_mode=stealth_mode)
                     if folder_imgs:
                         max_refs = 4 if generation_mode == "Qwen Edit" else 99
                         if reference_images:
-                            slots_left = max_refs - len(reference_images)
+                            slots_left = max(0, max_refs - len(reference_images))
                             reference_images = reference_images + folder_imgs[:slots_left]
                         else:
                             reference_images = folder_imgs[:max_refs]
                         st.success(f"{len(folder_imgs)} image(s) from folder added as reference.")
 
-                    # V7 models: auto-upload to imgBB as soon as files are loaded
-                    if _selected_is_v7 and reference_images:
-                        # Use file names as cache key to avoid re-uploading same files
-                        current_file_key = tuple(f.name for f in used_files)
-                        if st.session_state.get("imgbb_file_key") != current_file_key:
-                            try:
-                                import sys as _sys
-                                _sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
-                                from imgbb_upload import upload_base64_to_imgbb
-                                uploaded_urls = []
-                                for idx, pil_img in enumerate(reference_images):
-                                    # Upload at ORIGINAL resolution — no resize
-                                    buf = BytesIO()
-                                    pil_img.save(buf, format="PNG")
-                                    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-                                    info = upload_base64_to_imgbb(b64, name=f"ref_{idx}", expiration=120)
-                                    # Use "url" for full resolution; "display_url" may be a thumbnail
-                                    full_url = info.get("url") or info.get("image", {}).get("url") or info.get("display_url")
-                                    uploaded_urls.append(full_url)
-                                    st.caption(f"Uploaded ref_{idx}: {pil_img.size[0]}×{pil_img.size[1]}")
-                                st.session_state.imgbb_urls = uploaded_urls
-                                st.session_state.imgbb_file_key = current_file_key
-                            except Exception as e:
-                                st.warning(f"imgBB upload failed: {e}")
-                        if st.session_state.get("imgbb_urls"):
-                            v7_url_images = st.session_state.imgbb_urls
-                            reference_images = v7_url_images
-                            st.info(f"Images uploaded to imgBB — temporary URLs active (expire in ~120s)")
+                if not reference_images:
+                    # Clear cached imgBB URLs when no reference is loaded (uploader nor folder)
+                    st.session_state.pop("imgbb_urls", None)
+                    st.session_state.pop("imgbb_file_key", None)
+
+                # V7 models: auto-upload to imgBB as soon as refs are loaded (uploader or folder)
+                if _selected_is_v7 and reference_images:
+                    # Cache key from both sources to avoid re-uploading same files
+                    current_file_key = (
+                        tuple((f.name, f.size) for f in (uploaded_files or []))
+                        + tuple(st.session_state.get(f"{FOLDER_SELECTOR_KEY}_selected") or [])
+                    )
+                    if st.session_state.get("imgbb_file_key") != current_file_key:
+                        try:
+                            import sys as _sys
+                            _sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
+                            from imgbb_upload import upload_base64_to_imgbb
+                            uploaded_urls = []
+                            for idx, pil_img in enumerate(reference_images):
+                                # Upload at ORIGINAL resolution — no resize
+                                buf = BytesIO()
+                                pil_img.save(buf, format="PNG")
+                                b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                                info = upload_base64_to_imgbb(b64, name=f"ref_{idx}", expiration=120)
+                                # Use "url" for full resolution; "display_url" may be a thumbnail
+                                full_url = info.get("url") or info.get("image", {}).get("url") or info.get("display_url")
+                                uploaded_urls.append(full_url)
+                                st.caption(f"Uploaded ref_{idx}: {pil_img.size[0]}×{pil_img.size[1]}")
+                            st.session_state.imgbb_urls = uploaded_urls
+                            st.session_state.imgbb_file_key = current_file_key
+                        except Exception as e:
+                            st.warning(f"imgBB upload failed: {e}")
+                    if st.session_state.get("imgbb_urls"):
+                        v7_url_images = st.session_state.imgbb_urls
+                        reference_images = v7_url_images
+                        st.info(f"Images uploaded to imgBB — temporary URLs active (expire in ~120s)")
         
 
 
