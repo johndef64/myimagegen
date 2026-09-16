@@ -1329,13 +1329,13 @@ def show_modelslab_generator_page():
         generate_btn = st.button(
             "🎨 Generate Image",
             type="primary",
-            use_container_width=True,
+            width='stretch',
             disabled= not can_generate
         )
         
         fetch_results_btn = st.button(
             "🔄 Fetch Pending Results",
-            use_container_width=True,
+            width='stretch',
             disabled=not bool(st.session_state.pending_tasks),
             help="Run a single status check for all pending requests"
         )
@@ -1551,7 +1551,7 @@ def show_modelslab_generator_page():
             for idx, item in enumerate(st.session_state.completed_images[:5]):
                 with st.expander(f"**{item['timestamp']}** - {item['model']}", expanded=(idx == 0)):
                     if not stealth_mode:
-                        st.image(item['image'], use_container_width=True)
+                        st.image(item['image'], width='stretch')
                     
                     req_id_display = str(item['request_id'])[:12] if item.get('request_id') else 'N/A'
                     st.info(f"""
@@ -1979,7 +1979,7 @@ def show_modelslab_generator_page():
             load_btn = st.button(
                 "📤 Carica LoRA su ModelsLab",
                 type="primary",
-                use_container_width=True,
+                width='stretch',
                 key="lm_load_btn",
                 disabled=not (lm_url.strip() and lm_model_id.strip() and st.session_state.mslab_api_key)
             )

@@ -217,7 +217,7 @@ def show_image_viewer_page():
                         try:
                             # Load and display image
                             img = Image.open(img_data['full_path'])
-                            st.image(img, use_container_width=True)
+                            st.image(img, width='stretch')
                             
                             # Display info in expander
                             with st.expander("ℹ️ Info", expanded=False):
@@ -246,7 +246,7 @@ def show_image_viewer_page():
                                         file_name=img_data['filename'],
                                         mime="image/png",
                                         key=f"download_{idx}",
-                                        use_container_width=True
+                                        width='stretch'
                                     )
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")

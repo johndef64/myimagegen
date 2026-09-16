@@ -1177,7 +1177,7 @@ def show_google_generator_page():
         generate_btn = st.button(
             "🎨 Generate Image",
             type="primary",
-            use_container_width=True,
+            width='stretch',
             disabled=not (prompt and st.session_state.google_api_key),
             key="google_generate_btn"
         )
@@ -1260,7 +1260,7 @@ def show_google_generator_page():
                                     data=buf.getvalue(),
                                     file_name=f"google_generated_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
                                     mime="image/png",
-                                    use_container_width=True,
+                                    width='stretch',
                                     key="google_dl_generated"
                                 )
 
@@ -1278,7 +1278,7 @@ def show_google_generator_page():
                                             data=buf_comp.getvalue(),
                                             file_name=f"google_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
                                             mime="image/png",
-                                            use_container_width=True,
+                                            width='stretch',
                                             key="google_dl_comparison"
                                         )
 
@@ -1288,7 +1288,7 @@ def show_google_generator_page():
                                     prompt=prompt, model=selected_model, seed=seed
                                 )
                                 if comparison_img:
-                                    st.image(comparison_img, caption="Reference(s) → Generated", use_container_width=True)
+                                    st.image(comparison_img, caption="Reference(s) → Generated", width='stretch')
 
                             # Add to history
                             st.session_state.google_generated_images.insert(0, {
@@ -1315,7 +1315,7 @@ def show_google_generator_page():
 
         # Always show the latest generated image (persists across re-renders)
         if st.session_state.google_current_image is not None and not stealth_mode:
-            st.image(st.session_state.google_current_image, use_container_width=True)
+            st.image(st.session_state.google_current_image, width='stretch')
 
     # Dataset browser (imported from database_module.py)
     from database_module import render_dataset_browser
@@ -1397,7 +1397,7 @@ def show_google_generator_page():
             )
 
             qpg_generate = st.button("🚀 Generate Prompt", type="primary",
-                                     use_container_width=True, key="google_qpg_gen_btn")
+                                     width='stretch', key="google_qpg_gen_btn")
 
         with qpg_col2:
             st.subheader("Generated Prompt")
@@ -1450,7 +1450,7 @@ def show_google_generator_page():
                 st.text_area("Generated Result", value=result_prompt, height=200,
                              key=f"google_qpg_result_{prompt_hash}")
 
-                if st.button("📋 Copy", key="google_copy_generated_result", use_container_width=True):
+                if st.button("📋 Copy", key="google_copy_generated_result", width='stretch'):
                     try:
                         import pyperclip
                         pyperclip.copy(st.session_state['google_last_generated_prompt'])
@@ -1464,7 +1464,7 @@ def show_google_generator_page():
                     data=result_prompt,
                     file_name="generated_prompt.txt",
                     mime="text/plain",
-                    use_container_width=True,
+                    width='stretch',
                     key="google_qpg_download"
                 )
             elif not qpg_generate:
@@ -1559,7 +1559,7 @@ def show_google_generator_page():
             cost_per_img = BATCH_IMAGE_COSTS.get(batch_res_val, 0.034)
             job_cost = cost_per_img * batch_num_images
 
-            if st.button("+ Add to Queue", type="secondary", use_container_width=False,
+            if st.button("+ Add to Queue", type="secondary", width='content',
                         key="google_batch_add_job_btn"):
                 if not batch_prompt_input.strip():
                     st.error("Please enter a prompt before adding to queue.")
@@ -1623,7 +1623,7 @@ def show_google_generator_page():
         bsub_col, bclr_col = st.columns([3, 1])
 
         with bclr_col:
-            if st.button("🗑️ Clear Queue", use_container_width=True,
+            if st.button("🗑️ Clear Queue", width='stretch',
                          key="google_batch_clear_queue_btn"):
                 st.session_state.google_batch_queue = []
                 st.rerun()
@@ -1641,7 +1641,7 @@ def show_google_generator_page():
             submit_disabled = not st.session_state.google_api_key
             if st.button(
                 f"🚀 Submit Batch Job ({queue_total_images} images, est. ${queue_total_cost:.4f})",
-                type="primary", use_container_width=True,
+                type="primary", width='stretch',
                 disabled=submit_disabled,
                 key="google_batch_submit_btn"
             ):
@@ -1682,7 +1682,7 @@ def show_google_generator_page():
 
     mon_c1, mon_c2, mon_c3, mon_c4 = st.columns([1, 1, 1, 1])
     with mon_c1:
-        if st.button("🔄 Refresh All", use_container_width=True,
+        if st.button("🔄 Refresh All", width='stretch',
                      key="google_batch_refresh_all"):
             if st.session_state.google_api_key:
                 with st.spinner("Refreshing job statuses..."):
@@ -1693,7 +1693,7 @@ def show_google_generator_page():
                 st.error("❌ API key required.")
 
     with mon_c2:
-        if st.button("☁️ Import from Google", use_container_width=True,
+        if st.button("☁️ Import from Google", width='stretch',
                      key="google_batch_import_from_api",
                      help="Fetch recent batch jobs directly from Google API and merge into the log"):
             if not st.session_state.google_api_key:
@@ -1731,7 +1731,7 @@ def show_google_generator_page():
                         st.error(f"❌ Failed to import: {e}")
 
     with mon_c3:
-        if st.button("🗑️ Clear Completed", use_container_width=True,
+        if st.button("🗑️ Clear Completed", width='stretch',
                      key="google_batch_clear_done"):
             done_states = {'JOB_STATE_SUCCEEDED', 'JOB_STATE_FAILED', 'JOB_STATE_CANCELLED'}
             st.session_state.google_batch_jobs = [
@@ -1742,7 +1742,7 @@ def show_google_generator_page():
             st.rerun()
 
     with mon_c4:
-        if st.button("🗑️ Clear All", use_container_width=True,
+        if st.button("🗑️ Clear All", width='stretch',
                      key="google_batch_clear_all_jobs"):
             st.session_state.google_batch_jobs = []
             _batch_log_save([])
@@ -1798,7 +1798,7 @@ def show_google_generator_page():
 
                 with jr_col1:
                     if st.button("🔄 Refresh", key=f"google_batch_refresh_{job_idx}",
-                                 use_container_width=True):
+                                 width='stretch'):
                         if st.session_state.google_api_key:
                             refresh_google_batch_job(job_record, st.session_state.google_api_key)
                             st.rerun()
@@ -1806,7 +1806,7 @@ def show_google_generator_page():
                 with jr_col2:
                     if state == 'JOB_STATE_SUCCEEDED' and not job_record.get('result_images'):
                         if st.button("📥 Fetch Images", key=f"google_batch_fetch_{job_idx}",
-                                     use_container_width=True, type="primary"):
+                                     width='stretch', type="primary"):
                             with st.spinner("Downloading results..."):
                                 fetch_google_batch_results(job_record, st.session_state.google_api_key)
                             saved = [p for p in job_record.get('saved_image_paths', []) if p]
@@ -1830,7 +1830,7 @@ def show_google_generator_page():
                             try:
                                 pil_img = Image.open(BytesIO(img_data['data']))
                                 if not stealth_mode:
-                                    st.image(pil_img, use_container_width=True,
+                                    st.image(pil_img, width='stretch',
                                          caption=f"#{img_i+1} {img_data.get('key','')}")
                                 else:
                                     st.caption(f"Image #{img_i+1}")
@@ -1848,7 +1848,7 @@ def show_google_generator_page():
                                     file_name=fname,
                                     mime="image/png",
                                     key=f"google_batch_dl_{job_idx}_{img_i}",
-                                    use_container_width=True
+                                    width='stretch'
                                 )
                             except Exception:
                                 st.warning(f"Could not render image #{img_i+1}")
@@ -1879,7 +1879,7 @@ def show_google_generator_page():
                             file_name=zip_name,
                             mime="application/zip",
                             key=f"google_batch_dl_zip_{job_idx}",
-                            use_container_width=True
+                            width='stretch'
                         )
 
     # Prompt History Section
@@ -1904,7 +1904,7 @@ def show_google_generator_page():
             )
 
         with hist_col2:
-            if st.button("🗑️ Clear Prompt History", use_container_width=True, key="google_clear_prompt_hist"):
+            if st.button("🗑️ Clear Prompt History", width='stretch', key="google_clear_prompt_hist"):
                 st.session_state.google_prompt_history = []
                 st.rerun()
 
@@ -1942,7 +1942,7 @@ def show_google_generator_page():
                     source = " + ".join(source_parts) if source_parts else "Unknown"
                     st.caption(f"**Source:** {source}")
 
-                    if st.button("📋 Copy", key=f"google_copy_hist_{selected_hist_idx}", use_container_width=True):
+                    if st.button("📋 Copy", key=f"google_copy_hist_{selected_hist_idx}", width='stretch'):
                         try:
                             import pyperclip
                             pyperclip.copy(hist_item['result'])
@@ -1962,7 +1962,7 @@ def show_google_generator_page():
                 cols = st.columns([1, 2])
                 with cols[0]:
                     if not stealth_mode:
-                        st.image(item['image'], use_container_width=True)
+                        st.image(item['image'], width='stretch')
                     else:
                         st.info("🕶️ Hidden in Stealth Mode")
                 with cols[1]:

@@ -91,7 +91,7 @@ def render_image_selector(session_key: str = "img_selector", images_root: str = 
         # pagination
         pcols = st.columns([1, 4, 1])
         with pcols[0]:
-            if st.button("◀", key=f"{session_key}_prev", disabled=page == 0, use_container_width=True):
+            if st.button("◀", key=f"{session_key}_prev", disabled=page == 0, width='stretch'):
                 st.session_state[page_key] -= 1
                 st.rerun()
         with pcols[1]:
@@ -104,7 +104,7 @@ def render_image_selector(session_key: str = "img_selector", images_root: str = 
                     st.session_state[page_key] = new_page - 1
                     st.rerun()
         with pcols[2]:
-            if st.button("▶", key=f"{session_key}_next", disabled=page >= total_pages - 1, use_container_width=True):
+            if st.button("▶", key=f"{session_key}_next", disabled=page >= total_pages - 1, width='stretch'):
                 st.session_state[page_key] += 1
                 st.rerun()
 
@@ -132,7 +132,7 @@ def render_image_selector(session_key: str = "img_selector", images_root: str = 
                             unsafe_allow_html=True,
                         )
                         label = "✅ selected" if is_selected else "select"
-                        if st.button(label, key=f"{session_key}_btn_{abs_path}", use_container_width=True):
+                        if st.button(label, key=f"{session_key}_btn_{abs_path}", width='stretch'):
                             if is_selected:
                                 st.session_state[selected_key].remove(abs_path)
                             else:

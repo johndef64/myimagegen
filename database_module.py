@@ -48,7 +48,7 @@ def render_dataset_browser():
                                 try:
                                     st.image(
                                         f"data:image/jpeg;base64,{thumb}",
-                                        use_container_width=True
+                                        width='stretch'
                                     )
                                 except Exception:
                                     st.write("🖼️ *Thumbnail unavailable*")
