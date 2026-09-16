@@ -368,6 +368,7 @@ SCHEDULER_REQUIRED_FOR_IMG2IMG = ["flux", "fluxdev", "flux-2-dev", "flux-klein"]
 MINIMAL_V6_PARAMS = {
     "key", "prompt", "model_id", "init_image", "negative_prompt",
     "strength", "width", "height", "seed", "samples", "base64",
+    "enhance_prompt",  # must stay: dropping it re-enables API prompt enhancement
 }
 
 # Model configurations with default parameters
@@ -951,6 +952,21 @@ class PayloadBuilder:
         if value is not None:
             payload[key] = str(value) if stringify else value
     
+    @staticmethod
+    def _yes_no(value: Any, default: str = "no") -> str:
+        """
+        Normalize a flag to the "yes"/"no" strings the API expects.
+
+        A JSON boolean is NOT understood by the endpoint: it falls back to its
+        own default (enhance_prompt on), which injects 'volumetric fog',
+        'bright soft diffused light' & co. into the prompt.
+        """
+        if value is None:
+            return default
+        if isinstance(value, str):
+            return "yes" if value.strip().lower() in ("yes", "true", "1", "on") else "no"
+        return "yes" if value else "no"
+
     def _prepare_init_image(self, images: List[str], model_id: str) -> Union[str, List[str]]:
         """
         Prepare init_image for payload based on model requirements.
@@ -1008,7 +1024,8 @@ class PayloadBuilder:
         self._add_if_set(payload, "num_inference_steps", num_inference_steps, stringify=True)
         self._add_if_set(payload, "guidance_scale", guidance_scale, stringify=True)
         self._add_if_set(payload, "scheduler", scheduler)
-        self._add_if_set(payload, "enhance_prompt", enhance_prompt)
+        # Always sent as "yes"/"no" — omitting it lets the API enhance the prompt
+        payload["enhance_prompt"] = self._yes_no(enhance_prompt)
         self._add_if_set(payload, "lora_model", lora_model)
         self._add_if_set(payload, "lora_strength", lora_strength, stringify=True)
         self._add_if_set(payload, "samples", samples, stringify=True)
@@ -1076,7 +1093,8 @@ class PayloadBuilder:
         self._add_if_set(payload, "num_inference_steps", num_inference_steps, stringify=True)
         self._add_if_set(payload, "guidance_scale", guidance_scale, stringify=True)
         self._add_if_set(payload, "strength", strength, stringify=True)
-        self._add_if_set(payload, "enhance_prompt", enhance_prompt)
+        # Always sent as "yes"/"no" — omitting it lets the API enhance the prompt
+        payload["enhance_prompt"] = self._yes_no(enhance_prompt)
         self._add_if_set(payload, "base64", use_base64)
         self._add_if_set(payload, "lora_model", lora_model)
         self._add_if_set(payload, "lora_strength", lora_strength, stringify=True)
@@ -1128,12 +1146,14 @@ class PayloadBuilder:
         self._add_if_set(payload, "seed", seed)
         self._add_if_set(payload, "base64", use_base64)
         self._add_if_set(payload, "num_inference_steps", num_inference_steps, stringify=True)
-        
+        # Always sent as "yes"/"no" — omitting it lets the API enhance the prompt
+        payload["enhance_prompt"] = self._yes_no(kwargs.pop("enhance_prompt", None))
+
         # Add any extra kwargs
         payload.update(kwargs)
-        
+
         return payload
-    
+
     def build_img2img_v7_payload(
         self,
         prompt: str,
@@ -1181,11 +1201,13 @@ class PayloadBuilder:
         self._add_if_set(payload, "strength", strength, stringify=True)
         self._add_if_set(payload, "samples", samples, stringify=True)
         self._add_if_set(payload, "safety_checker", safety_checker)
-        
+        if "enhance_prompt" in kwargs:
+            kwargs["enhance_prompt"] = self._yes_no(kwargs["enhance_prompt"])
+
         # Add any extra kwargs
         payload.update(kwargs)
         return payload
-    
+
     def build_txt2img_v7_payload(
         self,
         prompt: str,
@@ -1224,9 +1246,10 @@ class PayloadBuilder:
         self._add_if_set(payload, "guidance_scale", guidance_scale, stringify=True)
         self._add_if_set(payload, "samples", samples, stringify=True)
         self._add_if_set(payload, "safety_checker", safety_checker)
-        self._add_if_set(payload, "enhance_prompt", enhance_prompt)
-        
-        # Add any extra kwargs  
+        # Always sent as "yes"/"no" — omitting it lets the API enhance the prompt
+        payload["enhance_prompt"] = self._yes_no(enhance_prompt)
+
+        # Add any extra kwargs
         payload.update(kwargs)
         return payload
 
