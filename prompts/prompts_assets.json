@@ -1,0 +1,167 @@
+
+{
+  "source": "https://github.com/ZeroLu/awesome-nanobanana-pro",
+  "metadata": {
+    "version": "1.0",
+    "author": "ZeroLu",
+    "description": "A collection of prompt assets for image generation and editing tasks. Task correlatd to 3D asset creation, image reference for characters, clothing, accessories, environments. Cretaing asset in T-pose frontal and rear for easy rigging and animating."
+  },
+
+  "Create_Prompts": {
+
+  },
+
+  "Edit_Prompts": {
+
+    "Make T-Pose":{
+
+    "Make T-Pose (Front/Rear)":{
+        "task": "Put the subject in T-pose, both frontal and rear views, for easy rigging and animating.",
+        "subject": {
+            "face": {
+              "preserve_original": true,
+              "reference_match": true,
+              "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
+            },
+            "constraints": {
+              "facial_identity": "Match reference image exactly 100%",
+              "face_edits": "None allowed",
+              "clothing_edits": "None allowed"
+            },
+            "pose": "T-pose, both frontal and rear views, for easy rigging and animating. Arms extended 45 degrees horizontally."
+          },
+        "background": "White or transparent background to isolate the subject.",
+        "style": "Use the same style of the reference image (realistic photography or digital art or 3D rendered creation)"
+    },
+    "Make T-Pose (Front)":{
+        "task": "Put the subject in T-pose, both frontal view, for easy rigging and animating.",
+        "subject": {
+            "face": {
+              "preserve_original": true,
+              "reference_match": true,
+              "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
+            },
+            "constraints": {
+              "facial_identity": "Match reference image exactly 100%",
+              "face_edits": "None allowed",
+              "clothing_edits": "None allowed"
+            },
+            "pose": "T-pose, frontal view only, for easy rigging and animating. Arms extended 45 degrees horizontally."
+          },
+        "background": "White or transparent background to isolate the subject.",
+        "style": "Use the same style of the reference image (realistic photography or digital art or 3D rendered creation)"
+    },
+    "Make T-Pose (rear)":{
+        "task": "Put the subject in T-pose, rear view only, for easy rigging and animating.",
+        "subject": {
+            "face": {
+              "preserve_original": true,
+              "reference_match": true,
+              "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
+            },
+            "constraints": {
+              "facial_identity": "Match reference image exactly 100%",
+              "face_edits": "None allowed",
+              "clothing_edits": "None allowed"
+            },
+            "pose": "T-pose, rear view only, for easy rigging and animating. Arms extended 45 degrees horizontally."
+          },
+        "background": "White or transparent background to isolate the subject.",
+        "style": "Use the same style of the reference image (realistic photography or digital art or 3D rendered creation)"
+    },
+
+    "Make T-Pose (lateral)": {
+        "task": "Put the subject in T-pose, lateral view only, for easy rigging and animating.",
+        "subject": {
+            "face": {
+              "preserve_original": true,
+              "reference_match": true,
+              "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
+            },
+            "constraints": {
+              "facial_identity": "Match reference image exactly 100%",
+              "face_edits": "None allowed",
+              "clothing_edits": "None allowed"
+            },
+            "pose": "T-pose, lateral view only, for easy rigging and animating. Arms extended 45 degrees horizontally."
+          },
+        "background": "White or transparent background to isolate the subject.",
+        "style": "Use the same style of the reference image (realistic photography or digital art or 3D rendered creation)"
+    }
+},
+    "Photo Edit":{
+        "Low quality photo enhancemnet": {
+            "task":  "Enhance the quality of the low-resolution, blurry, noisy, or pixelated photo to make it high-resolution, sharp, clear, and detailed while preserving the original content and composition of the image.",
+            "subject": {
+            "face": {
+                "preserve_original": true,
+                "reference_match": true,
+                "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image.",
+                "red_eyes": "remove any red-eye effect if present"
+            },
+            "constraints": {
+                "facial_identity": "Match reference image exactly 100%",
+                "face_edits": "None allowed"
+            }
+            },
+            "photography": {
+                "style": "high-resolution 4K photograph, ultra-detailed, realistic textures, sharp focus",
+                "quality": "enhanced from low-quality to high-quality",
+                "lighting": "improved lighting and contrast"
+            }
+            
+        },
+        "Dress up":{
+        "task":  "Edit only the subject's clothing, while preserving the whole reference image, facial features and identity. Change the clothing to the specified outfit."
+            , 
+        "subject": {
+            "face": {
+            "preserve_original": true,
+            "reference_match": true,
+            "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
+            },
+            "constraints": {
+            "facial_identity": "Match reference image exactly 100%",
+            "face_edits": "None allowed"
+            },
+            "clothing": {
+                "edit": "Change the outfit of this person to the specified outfit.",
+                "outfit": "DESCRIBE_THE_OUTFIT_HERE"
+            }
+        },
+            "photography": {
+            "style": "high-resolution 4K photograph, ultra-detailed, realistic textures, sharp focus",
+            "quality": "realistic social media quality, sharp focus on face and hands",
+            "lighting": "natural lighting"
+            }
+        },
+
+        "Apply Art Style": {
+        "task":  "Edit the subject's image to apply the specified art style, while preserving the subject's facial features and identity."
+            ,
+        "subject": {
+            "face": {
+            "preserve_original": true,
+            "reference_match": true,
+            "description": "The person's facial features, expression, and identity must remain exactly the same as the reference image."
+            },
+            "constraints": {
+            "facial_identity": "Match reference image exactly 100%",
+            "face_edits": "None allowed"
+            }
+        },
+            "art_style": {
+                "style": "DESCRIBE_THE_ART_STYLE_HERE"
+            },
+            "image": {
+            "style": "high-resolution 4K digital art image, ultra-detailed"
+            }
+        }
+    },
+
+    "Background Change": {}
+
+    }
+
+
+}

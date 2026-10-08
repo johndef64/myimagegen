@@ -1,0 +1,81 @@
+create_prompts:
+  pets_and_nature:
+    kittens:
+      - A cute fluffy orange kitten playing with a ball of yarn in a cozy living room, natural light, high detail
+      - An adorable tabby kitten sleeping peacefully on a soft cushion, warm afternoon light
+      - A playful black and white kitten exploring a garden with colorful flowers, natural outdoor lighting
+      - Close-up portrait of a grey kitten with bright green eyes, sitting on a windowsill, soft natural light
+    
+    nature:
+      - A serene landscape featuring a mountain lake at sunrise with reflection on calm water
+      - Close-up of colorful autumn leaves with morning dew drops, natural lighting
+      - A peaceful forest path covered in fallen leaves, golden hour lighting
+      - Beautiful sunset over a field of wildflowers, vibrant colors
+
+  people_portraits:
+    casual:
+      - Portrait of a person reading a book in a library, natural window light, 8K resolution
+      - A person enjoying coffee at a cafe, candid moment, warm lighting
+      - Portrait of someone working at a desk with a laptop, professional setting, natural light
+      - A person walking through a park in autumn, casual outdoor portrait
+    
+    professional:
+      - Professional headshot of a person in business attire, studio lighting, high detail
+      - Portrait of an artist in their studio, surrounded by paintings, natural light
+      - A chef in a professional kitchen, action shot, bright lighting
+      - Portrait of a musician with their instrument, soft lighting, artistic composition
+
+  objects_and_scenes:
+    still_life:
+      - Close-up of a vintage camera on a wooden table, natural light, high detail
+      - Artistic arrangement of fresh fruits in a bowl, natural lighting, vibrant colors
+      - Close-up of a stack of old books with a cup of tea, cozy atmosphere
+      - Beautiful flower arrangement in a ceramic vase, soft natural light
+
+#####################################
+
+edit_prompts:
+  remove: 
+    - Remove any background clutter to focus on the main subject
+    - Eliminate any distracting elements that take attention away from the focal point
+    - Remove any obstructing objects that block the view of the subject
+    - Clean up the background to create a more minimalist composition
+  
+  extend:
+    - Extend the photo to include more of the surrounding environment and context
+    - Expand the frame to show the full scene and additional details
+    - Widen the composition to include more background elements
+    - Extend to show the complete subject from head to toe
+
+  focus:
+    - Bring the main subject into sharper focus, making it the central element
+    - Enhance the clarity and detail of the primary subject
+    - Adjust depth of field to emphasize the focal point
+    - Make the subject more prominent in the composition
+
+  fix:
+    - Improve overall image quality, enhancing sharpness and clarity
+    - Fix any blurriness to make all elements crisp and clear
+    - Increase resolution to 8K for enhanced detail
+    - Enhance lighting to ensure proper exposure and color balance
+    - Correct any color imbalances for more natural tones
+    - Reduce noise and grain for a cleaner image
+
+  details:
+    enhance:
+      - Enhance the texture and details of the fur/fabric/surface in the image
+      - Add more definition to the eyes and facial features
+      - Improve the quality of fine details like whiskers, hair, or small objects
+      - Enhance color saturation to make the image more vibrant
+    
+    lighting:
+      - Adjust lighting to create more dramatic shadows and highlights
+      - Soften harsh lighting for a more natural appearance
+      - Add warmth to the lighting for a cozier atmosphere
+      - Enhance natural light to create a more realistic look
+    
+    composition:
+      - Adjust the composition following the rule of thirds
+      - Add more depth to the image through layering
+      - Create better balance in the overall composition
+      - Improve framing to better showcase the subject

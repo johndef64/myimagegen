@@ -1,0 +1,1756 @@
+from pyperclip import copy
+import streamlit as st
+from openai import OpenAI
+from datetime import datetime
+import random
+from io import BytesIO
+import base64
+import os
+from PIL import Image, ImageOps, PngImagePlugin
+import json
+from tomlkit import key
+import yaml
+
+from src.prompt_enhancer import render_prompt_enhancer
+from utils import render_image_selector
+
+# Page configuration
+st.set_page_config(
+    page_title="Image Tools App",
+    page_icon="🎨",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Model definitions
+OPENROUTER_IMAGE_MODELS = {
+    "flux.2-klein-4b":"black-forest-labs/flux.2-klein-4b",
+    "flux.2-pro": "black-forest-labs/flux.2-pro",
+    "flux.2-flex": "black-forest-labs/flux.2-flex",
+    "flux.2-max": "black-forest-labs/flux.2-max",
+
+    "gemini-2.5-flash-image": "google/gemini-2.5-flash-image",
+    "gemini-3-pro-image-preview": "google/gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview": "google/gemini-3.1-flash-image-preview",
+    "gpt-5-image-mini": "openai/gpt-5-image-mini",
+    "gpt-5-image": "openai/gpt-5-image",
+
+    # riverflow family
+    "riverflow-v2-fast":"sourceful/riverflow-v2-fast",
+    "riverflow-v2-pro":"sourceful/riverflow-v2-pro",
+    # "riverflow-v2-fast-preview" :"sourceful/riverflow-v2-fast-preview",
+    "riverflow-v2-standard-preview" :"sourceful/riverflow-v2-standard-preview",
+    "riverflow-v2-max-preview" :"sourceful/riverflow-v2-max-preview",
+
+    "seedream-4.5": "bytedance-seed/seedream-4.5",
+
+    # grok family
+    "grok-imagine-image-quality": "x-ai/grok-imagine-image-quality",
+
+    # recraft family
+    "recraft-v4.1-pro-vector": "recraft/recraft-v4.1-pro-vector",
+    "recraft-v4.1-vector": "recraft/recraft-v4.1-vector", # attenzione! recraft vecto ouptsd are in svg
+    # Versione Utility: Utilizza un'illuminazione piatta (flat lighting), inquadrature frontali e scene prive di distrazioni.Ideale per e-commerce, cataloghi, mock-up di prodotti e risorse grafiche in cui è richiesta la massima coerenza e ripetibilità, senza variazioni artistiche inaspettate.
+    "recraft-v4.1-utility-pro": "recraft/recraft-v4.1-utility-pro",
+    "recraft-v4.1-utility": "recraft/recraft-v4.1-utility", #0.04
+    "recraft-v4.1-pro": "recraft/recraft-v4.1-pro",  #0.25$
+    "recraft-v4.1": "recraft/recraft-v4.1",   # 0.04$
+
+    # recraft/recraft-v4-pro-vector # 0.30$
+    # recraft/recraft-v4-vector # 0.08$
+    # recraft/recraft-v4-pro # 0.25$
+    # recraft/recraft-v4 # 0.04$
+}
+default_model = "gemini-3.1-flash-image-preview" #"gemini-2.5-flash-image"
+
+# Direct provider model lists
+OPENAI_IMAGE_MODELS = {
+    "gpt-image-1": "gpt-image-1",
+    "gpt-image-1-mini": "gpt-image-1-mini",
+    "dall-e-3": "dall-e-3",
+}
+
+XAI_IMAGE_MODELS = {
+    "grok-2-image": "grok-2-image",
+    "grok-2-image-1212": "grok-2-image-1212",
+}
+
+GEMINI_IMAGE_MODELS = {
+    "gemini-2.5-flash-image": "gemini-2.5-flash-image",
+    "gemini-3-pro-image-preview": "gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview": "gemini-3.1-flash-image-preview",
+}
+
+# Provider registry: base_url + api key name (in api_keys.json) + models.
+# api_type "chat" = OpenAI-compatible chat.completions payload (same builder as OpenRouter);
+# api_type "images" = provider only exposes images.generate/edit for image models.
+PROVIDERS = {
+    "OpenRouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "key_name": "openrouter",
+        "api_type": "chat",
+        "models": OPENROUTER_IMAGE_MODELS,
+        "default_model": default_model,
+    },
+    "Google (Gemini)": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "key_name": "gemini",
+        "api_type": "chat",
+        "models": GEMINI_IMAGE_MODELS,
+        "default_model": "gemini-2.5-flash-image",
+    },
+    "OpenAI": {
+        "base_url": "https://api.openai.com/v1",
+        "key_name": "openai",
+        "api_type": "images",
+        "models": OPENAI_IMAGE_MODELS,
+        "default_model": "gpt-image-1",
+    },
+    "xAI": {
+        "base_url": "https://api.x.ai/v1",
+        "key_name": "xai",
+        "api_type": "images",
+        "models": XAI_IMAGE_MODELS,
+        "default_model": "grok-2-image",
+    },
+}
+
+# Implemtare la posiblità di fare vidoe geenation nella stessa app di base basata su Openrouter, con tutti i modelli video di Openrouter, in una sezione dedicata, con le stesse identiche funzionalità di prompt enhancer, prompt manager, e visualizzatore di immagini generate, ma per i video.
+
+# lo switch alla versione viedo puo essre fatto seplicemtne da barra laterale dove ci sarà la scelta del modello e di paramteri in una sezione per Video, seconbdi, risoluzione, audio etc
+
+# Questa sezione della pp, deve avere un funoine in piu, la previsoine dei costi di generaione del video. i costi che sono riuscito arecuperare sono in OPENROUTER_VIDEO_MODELS_COSTS, non rtutti i modelli hanno i copsti fini
+
+# come per la definizione del prompt per le immagini, che quello per i video deve avere lefunzoini di scrittura impeltazione basate su llm, ma ovviamnete i prompt di milogioramtneo edvono essere specificie per i video
+
+# API di esmepio pèer l'implemetazione sono in src/openrouter_video_universal.py
+# puoi usare questo scvriupt come riferimento e adattarlo modificarlo al fuzionamento della mia app
+
+# implementa la sezione video gen dell app con tutte le funzoinalità richieste
+
+
+OPENROUTER_VIDEO_MODELS_COSTS =     """
+google/veo-3.1 from $0,40 per second
+    Video (with audio)
+    1080p: $0,40 per second
+    4K: $0,60 per second
+    Video (no audio)
+    1080p: $0,20 per second
+    4K: $0,40 per second
+
+google/veo-3.1-lite from $0,05 per second
+    Video (with audio)
+    720p: $0,05 per second
+    1080p: $0,08 per second
+    Video (no audio)
+    720p: $0,03 per second
+    1080p: $0,05 per second
+
+google/veo-3.1-fast from $0,10 per second
+    Video (with audio)
+    720p: $0,10 per second
+    1080p: $0,12 per second
+    4K: $0,30 per second
+    Video (no audio)
+    720p: $0,08 per second
+    1080p: $0,10 per second
+    4K: $0,25 per second
+
+openai/sora-2-pro from $0,30 per second
+    Video Output
+    720p: $0,30 per second
+    1024p: $0,50 per second
+    1080p: $0,50 per second
+
+
+bytedance/seedance-1-5-pro  from $2,40 /M tokens :
+    Video Tokens (with audio)
+    $2,40 /M tokens
+    Video Tokens (no audio)
+    $1,20 /M tokens
+    Video (with audio)
+    480p: $0,02306 per second
+    720p: $0,05184 per second
+    1080p: $0,1166 per second
+    Video (no audio)
+    480p: $0,01153 per second
+    720p: $0,02592 per second
+    1080p: $0,05832 per secon
+
+bytedance/seedance-2.0
+    Video Tokens (with audio)
+    $7 /M tokens
+    Video Tokens (no audio)
+    $7 /M tokens
+    Video (with audio)
+    480p: $0,06726 per second
+    720p: $0,1512 per second
+    1080p: $0,3402 per second
+    Video (no audio)
+    480p: $0,06726 per second
+    720p: $0,1512 per second
+    1080p: $0,3402 per second
+
+
+bytedance/seedance-2.0-fast
+    Video Tokens (with audio)
+    $5,60 /M tokens
+    Video Tokens (no audio)
+    $5,60 /M tokens
+    Video (with audio)
+    480p: $0,0538 per second
+    720p: $0,121 per second
+    1080p: $0,2722 per second
+    Video (no audio)
+    480p: $0,0538 per second
+    720p: $0,121 per second
+    1080p: $0,2722 per second
+
+
+alibaba/wan-2.6 from $0,04 per second
+    Text to Video   
+    480p: $0,04 per second
+    720p: $0,08 per second
+    1080p: $0,12 per second
+    Image to Video
+    720p: $0,10 per second
+    1080p: $0,15 per second
+
+alibaba/wan-2.7 $0,10 per second
+
+minimax/hailuo-2.3   $0,0817 per second
+
+kwaivgi/kling-video-o1  $0,112 per second
+
+kwaivgi/kling-v3.0-std from $0,126 per second
+    Video (with audio)
+    $0,126 per second
+    Video (no audio)
+    $0,084 per second
+ 
+kwaivgi/kling-v3.0-pro from $0,168 per second
+    Video (with audio)
+    $0,168 per second
+    Video (no audio)
+    $0,112 per second
+
+x-ai/grok-imagine-video from $0,05 per second
+    Video Output
+    480p: $0,05 per second
+    720p: $0,07 per second
+    Image Input
+    $0,002 per image
+
+"""
+
+OPENROUTER_VIDEO_MODELS = {
+    # Google Veo
+    "veo-3.1":             "google/veo-3.1",
+    "veo-3.1-fast":        "google/veo-3.1-fast",
+    "veo-3.1-lite":        "google/veo-3.1-lite",
+    # ByteDance Seedance
+    "seedance-1.5-pro":    "bytedance/seedance-1-5-pro",
+    "seedance-2.0":        "bytedance/seedance-2.0",
+    "seedance-2.0-fast":   "bytedance/seedance-2.0-fast",
+    # Kuaishou Kling
+    "kling-v3-pro":        "kwaivgi/kling-v3.0-pro",
+    "kling-v3-std":        "kwaivgi/kling-v3.0-std",
+    "kling-o1":            "kwaivgi/kling-video-o1",
+    # Alibaba Wan
+    "wan-2.7":             "alibaba/wan-2.7",
+    "wan-2.6":             "alibaba/wan-2.6",
+    # MiniMax
+    "hailuo-2.3":          "minimax/hailuo-2.3",
+    # OpenAI
+    "sora-2-pro":          "openai/sora-2-pro",
+    # xAI
+    "grok-imagine-video":  "x-ai/grok-imagine-video",
+}
+
+
+ASPECT_RATIOS = {
+    "1:1 (1024×1024)": "1:1",
+    "2:3 (832×1248)": "2:3",
+    "3:2 (1248×832)": "3:2",
+    "3:4 (864×1184)": "3:4",
+    "4:3 (1184×864)": "4:3",
+    "4:5 (896×1152)": "4:5",
+    "5:4 (1152×896)": "5:4",
+    "9:16 (768×1344)": "9:16",
+    "16:9 (1344×768)": "16:9",
+    "21:9 (1536×672)": "21:9"
+}
+
+# Helper functions
+def load_api_key(key_name="openrouter"):
+    """Load a provider API key from api_keys.json"""
+    if os.path.exists("api_keys.json"):
+        try:
+            with open("api_keys.json", 'r') as f:
+                api_dict = json.load(f)
+                return api_dict.get(key_name, "") or ""
+        except:
+            return ""
+    return ""
+
+def load_prompts_from_yaml(file_path="prompts.yaml"):
+    root_path = "prompts/"
+    file_path = os.path.join(root_path, file_path)
+    # """Load prompts from YAML file"""
+    if not os.path.exists(file_path):
+        return {}
+    # if os.path.exists("prompts/prompts_custom.yaml"):
+    #     file_path = "prompts/prompts_custom.yaml"
+    try:
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                prompts_data = yaml.safe_load(f)
+                return prompts_data
+        return {}
+    except Exception as e:
+        st.error(f"Error loading prompts: {str(e)}")
+        return {}
+    
+def load_prompts_from_json(file_path="prompts.json"):
+    root_path = "prompts/"
+    file_path = os.path.join(root_path, file_path)
+    # """Load prompts from JSON file"""
+    if not os.path.exists(file_path):
+        return {}
+    # if os.path.exists("prompts/prompts_custom.json"):
+    #     file_path = "prompts/prompts_custom.json"
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            prompts_data = json.load(f)
+            return prompts_data
+    except Exception as e:
+        st.error(f"Error loading prompts from JSON: {str(e)}")
+        return {}
+
+def flatten_json_prompts(prompts_data):
+    """Flatten JSON prompts into section/category/prompt entries (like YAML UI)."""
+    flattened = []
+
+    if not isinstance(prompts_data, dict):
+        return flattened
+
+    def dump_prompt(value):
+        return json.dumps(value, indent=2, ensure_ascii=False)
+
+    processed_sections = set()
+
+    def process_section(section_key, section_label):
+        section_data = prompts_data.get(section_key)
+        if not isinstance(section_data, dict):
+            return
+
+        processed_sections.add(section_key)
+
+        # Expect structure: Section -> Category -> PromptName -> prompt dict
+        for category_key, category_value in section_data.items():
+            if isinstance(category_value, dict) and category_value:
+                for prompt_name, prompt_value in category_value.items():
+                    flattened.append({
+                        'section': section_label,
+                        'category': category_key,
+                        'prompt_name': prompt_name,
+                        'prompt': dump_prompt(prompt_value),
+                        'index': 0
+                    })
+            else:
+                # Empty or non-dict category; still surface it
+                flattened.append({
+                    'section': section_label,
+                    'category': category_key,
+                    'prompt_name': category_key,
+                    'prompt': dump_prompt(category_value),
+                    'index': 0
+                })
+
+    # Support both legacy lowercase and new capitalized keys
+    process_section("Create_Prompts", "Create")
+    process_section("create_prompts", "Create")
+    process_section("Edit_Prompts", "Edit")
+    process_section("edit_prompts", "Edit")
+
+    # Anything else at the top level (e.g., DATA) is treated as a standalone entry
+    for key, value in prompts_data.items():
+        if key in processed_sections or key.lower() in ['source', 'sources']:
+            continue
+
+        flattened.append({
+            'section': 'JSON Prompts',
+            'category': key,
+            'prompt_name': key,
+            'prompt': dump_prompt(value),
+            'index': 0
+        })
+
+    return flattened
+
+def flatten_prompts(prompts_data):
+    """Flatten nested prompts dictionary into a structured list with categories"""
+    flattened = []
+    
+    def recurse(d, path="", section=""):
+        for key, value in d.items():
+            current_path = f"{path} > {key}" if path else key
+            if isinstance(value, list):
+                # Found actual prompts
+                for i, prompt in enumerate(value):
+                    # Clean up comments (lines starting with #)
+                    if isinstance(prompt, str) and not prompt.strip().startswith('#'):
+                        flattened.append({
+                            'section': section,
+                            'category': current_path,
+                            'prompt': prompt.strip(),
+                            'index': i
+                        })
+            elif isinstance(value, dict):
+                # Keep recursing
+                recurse(value, current_path, section)
+    
+    # Process create_prompts
+    if 'create_prompts' in prompts_data:
+        recurse(prompts_data['create_prompts'], "", "Create")
+    
+    # Process edit_prompts
+    if 'edit_prompts' in prompts_data:
+        recurse(prompts_data['edit_prompts'], "", "Edit")
+    
+    return flattened
+
+def get_client(api_key, base_url="https://openrouter.ai/api/v1"):
+    """Initialize an OpenAI-compatible client for the selected provider"""
+    return OpenAI(
+        api_key=api_key,
+        base_url=base_url
+    )
+
+def encode_image_to_base64(image):
+    """Encode PIL Image to base64"""
+    buffered = BytesIO()
+    image.save(buffered, format="PNG")
+    image_data = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    return image_data
+
+def get_image_aspect_ratio(image):
+    """Calculate closest aspect ratio from image dimensions"""
+    width, height = image.size
+    ratio = width / height
+    aspect_ratios = {
+        "1:1": 1.0,
+        "2:3": 2/3,
+        "3:2": 3/2,
+        "3:4": 3/4,
+        "4:3": 4/3,
+        "4:5": 4/5,
+        "5:4": 5/4,
+        "9:16": 9/16,
+        "16:9": 16/9,
+        "21:9": 21/9
+    }
+    closest_ratio = min(aspect_ratios.items(), key=lambda x: abs(x[1] - ratio))
+    return closest_ratio[0]
+
+def resize_image(image, max_size=1024):
+    """Resize image maintaining aspect ratio"""
+    width, height = image.size
+    if width > height:
+        new_width = max_size
+        new_height = int(height * (max_size / width))
+    else:
+        new_height = max_size
+        new_width = int(width * (max_size / height))
+    return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+def aspect_ratio_to_size(aspect_ratio, model_name):
+    """Map an aspect ratio to the closest size supported by the images API"""
+    wide = {"3:2", "4:3", "5:4", "16:9", "21:9"}
+    tall = {"2:3", "3:4", "4:5", "9:16"}
+    if model_name.startswith("dall-e"):
+        if aspect_ratio in wide:
+            return "1792x1024"
+        if aspect_ratio in tall:
+            return "1024x1792"
+        return "1024x1024"
+    if aspect_ratio in wide:
+        return "1536x1024"
+    if aspect_ratio in tall:
+        return "1024x1536"
+    return "1024x1024"
+
+def generate_image_via_images_api(client, prompt, model_name, aspect_ratio,
+                                  reference_images, max_image_size, base_url):
+    """Generate via the images.generate/edit endpoint (OpenAI, xAI)"""
+    is_xai = "x.ai" in base_url
+
+    kwargs = {"model": model_name, "prompt": prompt, "n": 1}
+    if is_xai:
+        # xAI images API does not support size/seed
+        kwargs["response_format"] = "b64_json"
+    else:
+        kwargs["size"] = aspect_ratio_to_size(aspect_ratio, model_name)
+        if model_name.startswith("dall-e"):
+            kwargs["response_format"] = "b64_json"
+
+    if reference_images and not is_xai and not model_name.startswith("dall-e"):
+        # gpt-image models support edits with reference images
+        image_files = []
+        for i, img in enumerate(reference_images):
+            resized = resize_image(img, max_size=max_image_size)
+            buf = BytesIO()
+            resized.save(buf, format="PNG")
+            buf.seek(0)
+            buf.name = f"reference_{i}.png"
+            image_files.append(buf)
+        result = client.images.edit(
+            image=image_files if len(image_files) > 1 else image_files[0],
+            **kwargs
+        )
+    else:
+        result = client.images.generate(**kwargs)
+
+    data = result.data[0]
+    if getattr(data, "b64_json", None):
+        image = Image.open(BytesIO(base64.b64decode(data.b64_json)))
+    elif getattr(data, "url", None):
+        import urllib.request
+        with urllib.request.urlopen(data.url) as resp:
+            image = Image.open(BytesIO(resp.read()))
+    else:
+        return None, aspect_ratio, {"text": str(result), "finish_reason": None, "attrs": []}
+
+    return image, aspect_ratio
+
+def generate_image(prompt, api_key, model_name, aspect_ratio, seed, reference_images=None,
+                   use_image_aspect_ratio=False, max_image_size=1024,
+                   base_url="https://openrouter.ai/api/v1", api_type="chat"):
+    """Generate image using the selected provider (same payload builder for all chat endpoints)"""
+
+    if not seed:
+        seed = random.randint(1, 1000000)
+
+    client = get_client(api_key, base_url)
+
+    # Use first image aspect ratio if enabled
+    if reference_images and use_image_aspect_ratio:
+        aspect_ratio = get_image_aspect_ratio(reference_images[0])
+
+    # Providers without chat-based image output use the images endpoint
+    if api_type == "images":
+        return generate_image_via_images_api(
+            client, prompt, model_name, aspect_ratio,
+            reference_images, max_image_size, base_url
+        )
+
+    # Build message content
+    user_message = {
+        "role": "user",
+        "content": [{"type": "text", "text": prompt}]
+    }
+
+    # Process reference images if provided
+    if reference_images:
+        for img in reference_images:
+            # Resize image if needed
+            resized_img = resize_image(img, max_size=max_image_size)
+            image_data = encode_image_to_base64(resized_img)
+            user_message["content"].append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{image_data}"
+                }
+            })
+    
+    # Make API call
+    PARAM = {
+            #  "modalities": ["image", "text"],
+             "image_config": {
+                "aspect_ratio": aspect_ratio
+            }}
+    
+    SAFETY_SETTINGS_OFF = [
+        {"category": "HARM_CATEGORY_HARASSMENT",        "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH",       "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_CIVIC_INTEGRITY",   "threshold": "BLOCK_NONE"},
+    ]
+
+    if model_name in ["google/gemini-2.5-flash-image", "google/gemini-3-pro-image-preview", "google/gemini-3.1-flash-image-preview"]:
+        PARAM = {
+            "modalities": ["image", "text"],
+            "image_config": {
+                "aspect_ratio": aspect_ratio,
+                "image_size": "2K"
+            },
+            "safety_settings": SAFETY_SETTINGS_OFF
+        }
+    elif model_name.startswith("gemini"):
+        # Direct Google OpenAI-compat endpoint: only modalities is accepted
+        PARAM = {"modalities": ["image", "text"]}
+
+    print("Generating with params:", PARAM)
+
+    response_full = client.chat.completions.create(
+        model=model_name,
+        messages=[user_message],
+        seed=seed,
+        extra_body=PARAM
+    )
+
+    # Extract generated image
+    response = response_full.choices[0].message
+
+    # Try multiple ways to extract image from response
+    image = None
+
+    # Method 1: response.images (some models)
+    if hasattr(response, 'images') and response.images:
+        try:
+            base64_data = response.images[0]['image_url']['url']
+            if ',' in base64_data:
+                _, encoded = base64_data.split(",", 1)
+            else:
+                encoded = base64_data
+            image = Image.open(BytesIO(base64.b64decode(encoded)))
+        except Exception:
+            pass
+
+    # Method 2: content list with image parts
+    if image is None and hasattr(response, 'content') and isinstance(response.content, list):
+        for part in response.content:
+            if hasattr(part, 'type') and part.type == 'image_url':
+                try:
+                    url = part.image_url.url if hasattr(part, 'image_url') else part.get('image_url', {}).get('url', '')
+                    if ',' in url:
+                        _, encoded = url.split(",", 1)
+                    else:
+                        encoded = url
+                    image = Image.open(BytesIO(base64.b64decode(encoded)))
+                    break
+                except Exception:
+                    pass
+
+    # Method 3: inline base64 in content string
+    if image is None and hasattr(response, 'content') and isinstance(response.content, str):
+        import re
+        b64_match = re.search(r'data:image/[^;]+;base64,([A-Za-z0-9+/=]+)', response.content)
+        if b64_match:
+            try:
+                image = Image.open(BytesIO(base64.b64decode(b64_match.group(1))))
+            except Exception:
+                pass
+
+    if image:
+        return image, aspect_ratio
+
+    # No image found — build debug info for the caller
+    debug_info = {}
+    debug_info["text"] = getattr(response, 'content', None) if isinstance(getattr(response, 'content', None), str) else str(getattr(response, 'content', ''))
+    debug_info["finish_reason"] = getattr(response_full.choices[0], 'finish_reason', None)
+    debug_info["attrs"] = [a for a in dir(response) if not a.startswith('_')]
+
+    return None, aspect_ratio, debug_info
+
+def save_image_with_metadata(image, prompt, model_name, seed, aspect_ratio,
+                              output_folder="outputs", reduce_quality=False):
+    """Save image with metadata to outputs folder"""
+    metadata = PngImagePlugin.PngInfo()
+    metadata.add_text("Prompt", prompt)
+    metadata.add_text("Model", model_name)
+    metadata.add_text("Seed", str(seed))
+    metadata.add_text("Aspect_Ratio", aspect_ratio)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    prompt_short = prompt[:30].replace(" ", "_").replace("\n", "_")
+    prompt_short = prompt_short.replace("__", "_")# limit length
+    # replce all special characters in prompt_short that can interfere with file saving
+    prompt_short = "".join(c for c in prompt_short if c.isalnum() or c in ('_', '-'))
+
+    model_name_short = model_name.split("/")[-1]
+    
+    os.makedirs(output_folder, exist_ok=True)
+    
+    filename = os.path.join(output_folder, f"{prompt_short}_{model_name_short}_{timestamp}.png")
+    image.save(filename, pnginfo=metadata)
+    return filename
+
+def create_comparison_image(generated_image, reference_images, max_refs=3, prompt="", model="", seed=None):
+    """Create a side-by-side comparison image with reference and generated images, including generation parameters"""
+    if not reference_images:
+        return None
+    
+    from PIL import ImageDraw, ImageFont
+    
+    # Limit number of reference images
+    ref_images = reference_images[:max_refs]
+    
+    # Calculate dimensions
+    gen_width, gen_height = generated_image.size
+    
+    # Resize reference images to match generated image height
+    resized_refs = []
+    total_ref_width = 0
+    for ref_img in ref_images:
+        aspect = ref_img.width / ref_img.height
+        new_height = gen_height
+        new_width = int(new_height * aspect)
+        resized_ref = ref_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        resized_refs.append(resized_ref)
+        total_ref_width += new_width
+    
+    # Add padding
+    padding = 20
+    text_area_height = 100  # Space for metadata text at bottom
+    total_width = total_ref_width + gen_width + padding * (len(resized_refs) + 1)
+    
+    # Create comparison canvas with extra space for text
+    comparison = Image.new('RGB', (total_width, gen_height + padding * 2 + text_area_height), color='white')
+    
+    # Paste reference images
+    x_offset = padding
+    for ref_img in resized_refs:
+        comparison.paste(ref_img, (x_offset, padding))
+        x_offset += ref_img.width + padding
+    
+    # Paste generated image
+    comparison.paste(generated_image, (x_offset, padding))
+    
+    # Add metadata text at the bottom
+    draw = ImageDraw.Draw(comparison)
+    try:
+        font = ImageFont.truetype("arial.ttf", 14)
+        font_bold = ImageFont.truetype("arialbd.ttf", 16)
+    except:
+        font = ImageFont.load_default()
+        font_bold = ImageFont.load_default()
+    
+    # Position for text
+    text_y = gen_height + padding * 2 + 10
+    text_x = padding
+    
+    # Draw metadata
+    metadata_text = [
+        f"Model: {model}",
+        f"Seed: {seed if seed else 'Random'}"
+    ]
+    
+    for i, line in enumerate(metadata_text):
+        draw.text((text_x, text_y + i * 20), line, fill='black', font=font)
+    
+    # Draw prompt (wrapped if too long)
+    prompt_y = text_y + 45
+    prompt_text = f"Prompt: {prompt}"
+    if len(prompt_text) > 150:
+        prompt_text = prompt_text[:150] + "..."
+    draw.text((text_x, prompt_y), prompt_text, fill='black', font=font)
+    
+    return comparison
+
+# Initialize session state
+if 'generated_images' not in st.session_state:
+    st.session_state.generated_images = []
+if 'prompt_history' not in st.session_state:
+    st.session_state.prompt_history = []
+if 'api_key' not in st.session_state:
+    st.session_state.api_key = load_api_key()
+if 'prompts_data' not in st.session_state:
+    prompts_data = load_prompts_from_yaml()
+    st.session_state.prompts_data = prompts_data
+    st.session_state.flattened_prompts = flatten_prompts(prompts_data)
+if 'json_prompts_data' not in st.session_state:
+    json_prompts_data = load_prompts_from_json()
+    st.session_state.json_prompts_data = json_prompts_data
+    st.session_state.flattened_json_prompts = flatten_json_prompts(json_prompts_data)
+
+# Page Navigation — sidebar buttons grouped by purpose.
+# Group label -> list of (page id, button label). The page id is what the
+# `if page == ...` dispatch below matches, so it must stay unchanged.
+NAV_GROUPS = {
+    "Generate": [
+        ("Image Generator", "🖼️ Image Generator"),
+        ("Google AI Generator", "✨ Google AI Generator"),
+        ("ModelsLab Generator", "🧪 ModelsLab Generator"),
+        ("Video Generator", "🎬 Video Generator"),
+        ("Xai Video Generator", "🎬 Xai Video Generator"),
+        # ("Audio Generator", "🔊 Audio Generator"),
+    ],
+    "Prompting": [
+        ("Prompt Maker", "🧩 Prompt Maker"),
+        ("Prompt Generator", "🪄 Prompt Generator"),
+        ("Prompt Manager", "📚 Prompt Manager"),
+    ],
+    "Viewer": [
+        ("Image Viewer", "🔍 Image Viewer"),
+    ],
+}
+DEFAULT_PAGE = "Image Generator"
+
+if "nav_page" not in st.session_state:
+    st.session_state.nav_page = DEFAULT_PAGE
+
+with st.sidebar:
+    st.title("🎨 Image Tools")
+    for group_label, entries in NAV_GROUPS.items():
+        st.caption(group_label.upper())
+        for page_id, button_label in entries:
+            is_active = st.session_state.nav_page == page_id
+            if st.button(
+                button_label,
+                key=f"nav_btn_{page_id}",
+                width='stretch',
+                type="primary" if is_active else "secondary",
+            ):
+                st.session_state.nav_page = page_id
+                st.rerun()
+    page = st.session_state.nav_page
+    st.divider()
+
+if page == "Video Generator":
+    import video_gen_page
+    video_gen_page.show_video_generator_page()
+    st.stop()
+
+if page == "Xai Video Generator":
+    import video_gen_page_xai
+    video_gen_page_xai.show_video_generator_page()
+    st.stop()
+
+if page == "Google AI Generator":
+    import google_page
+    google_page.show_google_generator_page()
+    st.stop()
+
+if page == "Image Viewer":
+    # Import and run the image viewer page
+    import image_viewer_page
+    image_viewer_page.show_image_viewer_page()
+    st.stop()
+
+if page == "Prompt Manager":
+    # Import and run the prompt manager page
+    import prompt_manager_page
+    prompt_manager_page.show_prompt_manager_page()
+    st.stop()
+
+if page == "Prompt Maker":
+    # Import and run the prompt maker page
+    import prompt_maker_page
+    prompt_maker_page.show_prompt_maker_page()
+    st.stop()
+
+if page == "Prompt Generator":
+    # Import and run the tagger page
+    import promptgen_page
+    promptgen_page.show_tagger_page()
+    st.stop()
+
+# if page == "Audio Generator":
+#     # Import and run the audio generator page
+#     import audio_generator_page
+#     audio_generator_page.show_audio_generator_page()
+#     st.stop()
+
+if page == "ModelsLab Generator":
+    # Import and run the ModelsLab generator page
+    import mslab_page
+    mslab_page.show_modelslab_generator_page()
+    st.stop()
+
+# Main UI
+st.title("🎨 Image Generator")
+st.markdown("Generate images using OpenRouter, OpenAI, xAI or Google APIs with customizable parameters")
+
+# Sidebar - Configuration
+with st.sidebar:
+    st.subheader("⚙️ Configuration")
+
+    # Provider selection
+    selected_provider = st.selectbox(
+        "Provider",
+        options=list(PROVIDERS.keys()),
+        index=0,
+        help="Choose the image generation API provider"
+    )
+    provider_cfg = PROVIDERS[selected_provider]
+
+    # API Key input (per provider, preloaded from api_keys.json)
+    _key_state = f"api_key_{provider_cfg['key_name']}"
+    if _key_state not in st.session_state:
+        st.session_state[_key_state] = load_api_key(provider_cfg["key_name"])
+    api_key_input = st.text_input(
+        f"{selected_provider} API Key",
+        type="password",
+        key=_key_state,
+        help=f"Loaded from api_keys.json (key '{provider_cfg['key_name']}')"
+    )
+    st.session_state.api_key = api_key_input
+
+    st.divider()
+
+    # Model selection (per provider)
+    st.subheader("Model Settings")
+    provider_models = provider_cfg["models"]
+    selected_model = st.selectbox(
+        "Model",
+        options=list(provider_models.keys()),
+        index=list(provider_models.keys()).index(provider_cfg["default_model"]),
+        key=f"model_select_{selected_provider}",
+        help="Choose the image generation model"
+    )
+    if provider_cfg["api_type"] == "images" and "x.ai" in provider_cfg["base_url"]:
+        st.caption("⚠️ xAI images API ignores aspect ratio, seed and reference images")
+    
+    # Aspect ratio
+    use_auto_aspect = st.checkbox(
+        "Auto-detect aspect ratio from reference image",
+        value=True,
+        help="Automatically use the aspect ratio of the first reference image"
+    )
+    
+    aspect_ratio_display = st.selectbox(
+        "Aspect Ratio",
+        options=list(ASPECT_RATIOS.keys()),
+        index=0,
+        disabled=use_auto_aspect,
+        help="Target aspect ratio for generated image"
+    )
+    aspect_ratio = ASPECT_RATIOS[aspect_ratio_display]
+    
+
+    PROMPTS_FILES = {"base": "prompts",
+                     "custom": "prompts_custom",
+                     "assets": "prompts_assets"}
+
+    # Check if custom prompts file exists (either .json or .yaml)
+    default_prompts = "custom" if (os.path.exists("prompts/prompts_custom.json") or os.path.exists("prompts/prompts_custom.yaml")) else "base"
+
+    # Prompt Files
+    st.subheader("Prompt Source Settings")
+    selected_prompts= st.selectbox(
+        "Prompts Source",
+        options=list(PROMPTS_FILES.keys()),
+        index=list(PROMPTS_FILES.keys()).index(default_prompts),
+        help="Choose the prompt file to use"
+    )
+
+    # Seed
+    st.subheader("Generation Parameters")
+    use_random_seed = st.checkbox("Use random seed", value=True)
+    if use_random_seed:
+        seed = None
+    else:
+        seed = st.number_input(
+            "Seed",
+            min_value=1,
+            max_value=1000000,
+            value=12345,
+            help="Fixed seed for reproducible results"
+        )
+    
+    # Image processing settings
+    st.subheader("Reference Image Settings")
+    max_image_size = st.slider(
+        "Max reference image size (px)",
+        min_value=256,
+        max_value=2048,
+        value=1024,
+        step=128,
+        help="Maximum dimension for reference images before encoding"
+    )
+    
+    # Save settings
+    st.divider()
+    auto_save = st.checkbox(
+        "Auto-save generated images",
+        value=True,
+        help="Automatically save images to outputs folder"
+    )
+    
+    # Stealth Mode
+    st.divider()
+    stealth_mode = st.checkbox(
+        "🕶️ Stealth Mode",
+        value=False,
+        help="Hide all image thumbnails for privacy"
+    )
+
+# Main content area
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    # header less the subheader
+    st.subheader("📝 Prompt & Reference Images", ) 
+    
+    # Prompt source selector
+    prompt_source = st.radio(
+        "Prompt Source",
+        options=["Custom Prompt", "Load from YAML", "Load from JSON"],
+        horizontal=True,
+        help="Choose to write your own prompt or load from YAML/JSON files"
+    )
+    
+    prompt = ""
+    
+    if prompt_source == "Load from JSON":
+        # reload ech time st.session_state.flattened_json_prompts
+        json_prompts_data = load_prompts_from_json(PROMPTS_FILES[selected_prompts] + ".json")
+        st.session_state.json_prompts_data = json_prompts_data
+        st.session_state.flattened_json_prompts = flatten_json_prompts(json_prompts_data)
+
+        
+        if st.session_state.flattened_json_prompts:
+            # Mirror YAML selection: Section -> Category -> Prompt
+            sections = {}
+            for item in st.session_state.flattened_json_prompts:
+                section = item.get('section', 'JSON Prompts') or 'JSON Prompts'
+                sections.setdefault(section, []).append(item)
+
+            col_section, col_category = st.columns([1, 2])
+
+            with col_section:
+                section_options = list(sections.keys())
+                selected_section = st.selectbox(
+                    "Section",
+                    options=section_options,
+                    help="Choose between Create or Edit prompts",
+                    key="json_section_select"
+                )
+
+            section_prompts = sections[selected_section]
+            categories = sorted(list(set([p['category'] for p in section_prompts])))
+
+            with col_category:
+                selected_category = st.selectbox(
+                    "Category",
+                    options=categories,
+                    help="Choose a category of prompts",
+                    key="json_category_select"
+                )
+
+            filtered_prompts = [p for p in section_prompts if p['category'] == selected_category]
+
+            prompt_options = ["Select a prompt..."] + [
+                (p.get('prompt_name') or (p['prompt'][:80] + "..." if len(p['prompt']) > 80 else p['prompt']))
+                for p in filtered_prompts
+            ]
+
+            selected_prompt_idx = st.selectbox(
+                "Select Prompt",
+                options=range(len(prompt_options)),
+                format_func=lambda x: prompt_options[x],
+                help="Choose a specific prompt",
+                key="json_prompt_select"
+            )
+
+            # Manage prompt text state to allow editing while updating on selection change
+            selection_key = f"{selected_section}_{selected_category}_{selected_prompt_idx}"
+            
+            # Check if selection has changed
+            if 'last_json_selection' not in st.session_state or st.session_state.last_json_selection != selection_key:
+                st.session_state.last_json_selection = selection_key
+                if selected_prompt_idx > 0:
+                    # Update text with selected prompt
+                    st.session_state['json_prompt_input'] = filtered_prompts[selected_prompt_idx - 1]['prompt']
+                else:
+                    # Clear text if no prompt selected
+                    st.session_state['json_prompt_input'] = ""
+            
+            # Initialize if not exists
+            if 'json_prompt_input' not in st.session_state:
+                 st.session_state['json_prompt_input'] = ""
+
+            prompt = st.text_area(
+                "Selected Prompt (editable)" if selected_prompt_idx > 0 else "Image Prompt",
+                key="json_prompt_input",
+                height=200,
+                placeholder="Select a prompt from the dropdowns above or type here...",
+                help="You can edit the loaded prompt before generating"
+            )
+        else:
+            st.warning("⚠️ No prompts found in prompts.json")
+            prompt = st.text_area(
+                "Image Prompt",
+                height=200,
+                placeholder="Describe the image you want to generate...",
+                help="Enter a detailed description of the image you want to create",
+                key="custom_prompt_fallback_json"
+            )
+    
+    elif prompt_source == "Load from YAML":
+        prompts_data = load_prompts_from_yaml(f"{PROMPTS_FILES[selected_prompts]}.yaml")
+        st.session_state.prompts_data = prompts_data
+
+        if st.session_state.prompts_data:
+            prompts_data = st.session_state.prompts_data
+            
+            # Build hierarchical structure: Section -> Category -> Sublevel -> Prompts
+            # Section mapping
+            section_keys = {
+                "Create": "create_prompts",
+                "Edit": "edit_prompts"
+            }
+            available_sections = [s for s, k in section_keys.items() if k in prompts_data]
+            
+            if available_sections:
+                # Create a hierarchical selector with 3 levels
+                col_section, col_category = st.columns([1, 1])
+                
+                with col_section:
+                    selected_section = st.selectbox(
+                        "Section",
+                        options=available_sections,
+                        help="Choose between Create or Edit prompts",
+                        key="yaml_section_select"
+                    )
+                
+                # Get categories for selected section
+                section_key = section_keys[selected_section]
+                section_data = prompts_data.get(section_key, {})
+                categories = list(section_data.keys())
+                
+                with col_category:
+                    selected_category = st.selectbox(
+                        "Category",
+                        options=categories if categories else ["No categories"],
+                        help="Choose a category of prompts",
+                        key="yaml_category_select"
+                    )
+                
+                # Get sublevels for selected category
+                category_data = section_data.get(selected_category, {})
+                
+                # Determine if category_data has sublevels (dict) or is directly a list of prompts
+                if isinstance(category_data, dict):
+                    sublevels = list(category_data.keys())
+                    has_sublevels = True
+                elif isinstance(category_data, list):
+                    sublevels = ["(prompts)"]
+                    has_sublevels = False
+                else:
+                    sublevels = []
+                    has_sublevels = False
+                
+                # Sublevel selector (below section/category)
+                if has_sublevels and sublevels:
+                    selected_sublevel = st.selectbox(
+                        "Sublevel",
+                        options=sublevels,
+                        help="Choose a sublevel of prompts",
+                        key="yaml_sublevel_select"
+                    )
+                else:
+                    selected_sublevel = None
+                
+                # Get prompts based on selection
+                if has_sublevels and selected_sublevel:
+                    sublevel_data = category_data.get(selected_sublevel, [])
+                    # Check if sublevel_data is another dict (4th level nesting) or a list
+                    if isinstance(sublevel_data, dict):
+                        # Handle 4th level: flatten it
+                        prompts_list = []
+                        for sub_key, sub_val in sublevel_data.items():
+                            if isinstance(sub_val, list):
+                                for p in sub_val:
+                                    if isinstance(p, str) and not p.strip().startswith('#'):
+                                        prompts_list.append(p.strip())
+                            elif isinstance(sub_val, str) and not sub_val.strip().startswith('#'):
+                                prompts_list.append(sub_val.strip())
+                    elif isinstance(sublevel_data, list):
+                        prompts_list = [p.strip() for p in sublevel_data if isinstance(p, str) and not p.strip().startswith('#')]
+                    else:
+                        prompts_list = []
+                else:
+                    # No sublevels, category_data is the list of prompts
+                    if isinstance(category_data, list):
+                        prompts_list = [p.strip() for p in category_data if isinstance(p, str) and not p.strip().startswith('#')]
+                    else:
+                        prompts_list = []
+                
+                # Create options for selectbox with preview
+                prompt_options = ["Select a prompt..."] + [
+                    f"{p[:80]}..." if len(p) > 80 else p
+                    for p in prompts_list
+                ]
+                
+                selected_prompt_idx = st.selectbox(
+                    "Select Prompt",
+                    options=range(len(prompt_options)),
+                    format_func=lambda x: prompt_options[x],
+                    help="Choose a specific prompt",
+                    key="yaml_prompt_select"
+                )
+                
+                if selected_prompt_idx > 0:
+                    selected_prompt_text = prompts_list[selected_prompt_idx - 1]
+                    # Use dynamic key to force refresh when selection changes
+                    sublevel_key = selected_sublevel if selected_sublevel else "none"
+                    prompt = st.text_area(
+                        "Selected Prompt (editable)",
+                        value=selected_prompt_text,
+                        height=150,
+                        key=f"yaml_prompt_{selected_section}_{selected_category}_{sublevel_key}_{selected_prompt_idx}",
+                        help="You can edit the loaded prompt before generating"
+                    )
+                else:
+                    prompt = st.text_area(
+                        "Image Prompt",
+                        height=150,
+                        placeholder="Select a prompt from the dropdowns above...",
+                        help="Select section, category, sublevel and prompt from the dropdowns",
+                        key="empty_yaml_prompt"
+                    )
+            else:
+                st.warning("⚠️ No valid sections found in prompts.yaml")
+                prompt = st.text_area(
+                    "Image Prompt",
+                    height=150,
+                    placeholder="Describe the image you want to generate...",
+                    help="Enter a detailed description of the image you want to create",
+                    key="custom_prompt_fallback_yaml"
+                )
+        else:
+            st.warning("⚠️ No prompts found in prompts.yaml")
+            prompt = st.text_area(
+                "Image Prompt",
+                height=150,
+                placeholder="Describe the image you want to generate...",
+                help="Enter a detailed description of the image you want to create",
+                key="custom_prompt_fallback"
+            )
+    else:
+        # Custom prompt input
+        prompt = st.text_area(
+            "Image Prompt",
+            height=150,
+            placeholder="Describe the image you want to generate...",
+            help="Enter a detailed description of the image you want to create",
+            key="custom_prompt"
+        )
+
+    prompt = render_prompt_enhancer(prompt, session_key="app_llm_enhanced_prompt")
+
+    # Reference images upload
+    st.subheader("Reference Images (Optional)")
+    uploaded_files = st.file_uploader(
+        "Upload reference images",
+        type=["png", "jpg", "jpeg", "webp", "bmp"],
+        accept_multiple_files=True,
+        help="Upload one or more reference images to guide the generation"
+    )
+
+    if uploaded_files:
+        st.write(f"**{len(uploaded_files)} image(s) uploaded**")
+        ref_cols = st.columns(min(len(uploaded_files), 3))
+        reference_images = []
+        for idx, uploaded_file in enumerate(uploaded_files):
+            img = Image.open(uploaded_file)
+            img = ImageOps.exif_transpose(img)
+            img = img.convert("RGB")
+            reference_images.append(img)
+            with ref_cols[idx % 3]:
+                if not stealth_mode:
+                    st.image(img, caption=f"Ref {idx+1}", width=150)
+                st.caption(f"Size: {img.size[0]}×{img.size[1]}")
+    else:
+        reference_images = None
+
+    with st.expander("📂 Select from images folder", expanded=False):
+        folder_imgs = render_image_selector(session_key="app_img_selector", stealth_mode=stealth_mode)
+        if folder_imgs:
+            if reference_images:
+                reference_images = reference_images + folder_imgs
+            else:
+                reference_images = folder_imgs
+            st.success(f"{len(folder_imgs)} image(s) from folder added as reference.")
+    
+
+
+with col2:
+    st.subheader("🖼️ Generated Image")
+    # Generate button
+    generate_btn = st.button(
+        "🎨 Generate Image",
+        type="primary",
+        width="stretch",
+        disabled=not (prompt and st.session_state.api_key)
+    )
+    
+    if generate_btn:
+        if not st.session_state.api_key:
+            st.error(f"❌ Please enter your {selected_provider} API key in the sidebar")
+        elif not prompt:
+            st.error("❌ Please enter a prompt")
+        else:
+            with st.spinner("Generating image..."):
+                try:
+                    model_full_name = provider_cfg["models"][selected_model]
+
+                    _result = generate_image(
+                        prompt=prompt,
+                        api_key=st.session_state.api_key,
+                        model_name=model_full_name,
+                        aspect_ratio=aspect_ratio,
+                        seed=seed,
+                        reference_images=reference_images,
+                        use_image_aspect_ratio=use_auto_aspect,
+                        max_image_size=max_image_size,
+                        base_url=provider_cfg["base_url"],
+                        api_type=provider_cfg["api_type"]
+                    )
+                    generated_image = _result[0]
+                    used_aspect_ratio = _result[1]
+                    _debug_info = _result[2] if len(_result) > 2 else None
+                    
+                    if generated_image:
+                        st.success("✅ Image generated successfully!")
+                        
+                        # Display image
+                        if not stealth_mode:
+                            st.image(generated_image, width="stretch")
+                        
+                        # Image info
+                        st.info(f"""
+                        **Generation Details:**
+                        - Model: `{selected_model}`
+                        - Aspect Ratio: `{used_aspect_ratio}`
+                        - Seed: `{seed if seed else 'Random'}`
+                        - Reference Images: `{len(reference_images) if reference_images else 0}`
+                        """)
+                        
+                        # Save image if auto-save is enabled
+                        if auto_save:
+                            saved_path = save_image_with_metadata(
+                                generated_image,
+                                prompt,
+                                model_full_name,
+                                seed if seed else random.randint(1, 1000000),
+                                used_aspect_ratio
+                            )
+                            st.success(f"💾 Saved to: `{saved_path}`")
+
+                            # autosave also comparison image
+                            if reference_images:
+                                comparison_img = create_comparison_image(
+                                    generated_image, 
+                                    reference_images,
+                                    prompt=prompt,
+                                    model=selected_model,
+                                    seed=seed
+                                )
+                                if comparison_img:
+                                    # save comparison as jpeg reducing quality
+                                    comparison_path = saved_path.replace(".png", "_comparison.jpg")
+                                    os.makedirs("outputs/comparisons", exist_ok=True)
+                                    comparison_path = comparison_path.replace("outputs", "outputs/comparisons")
+                                    print("Saving comparison image to:", comparison_path)
+                                    comparison_img.save(comparison_path, format="JPEG", quality=75)
+                                    st.success(f"💾 Comparison image saved to: `{comparison_path}`")
+                        
+                        # Download buttons
+                        col_dl1, col_dl2 = st.columns(2)
+                        
+                        with col_dl1:
+                            # Download generated image
+                            buf = BytesIO()
+                            generated_image.save(buf, format="PNG")
+                            st.download_button(
+                                label="📥 Download Generated",
+                                data=buf.getvalue(),
+                                file_name=f"generated_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                                mime="image/png",
+                                width="stretch"
+                            )
+                        
+                        with col_dl2:
+                            # Download comparison if reference images exist
+                            if reference_images:
+                                comparison_img = create_comparison_image(
+                                    generated_image, 
+                                    reference_images,
+                                    prompt=prompt,
+                                    model=selected_model,
+                                    seed=seed
+                                )
+                                if comparison_img:
+                                    buf_comp = BytesIO()
+                                    comparison_img.save(buf_comp, format="PNG")
+                                    st.download_button(
+                                        label="📥 Download Comparison",
+                                        data=buf_comp.getvalue(),
+                                        file_name=f"comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                                        mime="image/png",
+                                        width="stretch"
+                                    )
+                        
+                        # Show comparison preview if reference images exist
+                        # if reference_images and not stealth_mode:
+                        with st.expander("👁️ View Comparison", expanded=False):
+                            comparison_img = create_comparison_image(
+                                generated_image, 
+                                reference_images,
+                                prompt=prompt,
+                                model=selected_model,
+                                seed=seed
+                            )
+                            if comparison_img:
+                                st.image(comparison_img, caption="Reference(s) → Generated", width="stretch")
+                    
+                        # Add to history
+                        st.session_state.generated_images.insert(0, {
+                            'image': generated_image,
+                            'prompt': prompt,
+                            'model': selected_model,
+                            'seed': seed,
+                            'aspect_ratio': used_aspect_ratio,
+                            'reference_images': reference_images,
+                            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        })
+                        
+                    else:
+                        st.error("❌ Failed to generate image. No image data returned.")
+                        if _debug_info:
+                            with st.expander("🔍 Response Debug Info", expanded=True):
+                                if _debug_info.get("text"):
+                                    st.markdown("**Response text:**")
+                                    st.code(_debug_info["text"], language=None)
+                                if _debug_info.get("finish_reason"):
+                                    st.markdown(f"**Finish reason:** `{_debug_info['finish_reason']}`")
+                                if _debug_info.get("attrs"):
+                                    st.markdown(f"**Response attributes:** `{', '.join(_debug_info['attrs'])}`")
+
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+                    st.exception(e)
+
+# Dataset browser (imported from database_module.py)
+from database_module import render_dataset_browser
+render_dataset_browser()
+
+
+# Quick Prompt Generator Section
+st.divider()
+st.subheader("✨ Quick Prompt Generator")
+st.markdown("Generate prompts from images or text for direct use in image generation")
+
+with st.expander("🚀 Generate Prompt from Image/Text", expanded=False):
+    qpg_col1, qpg_col2 = st.columns([1, 1])
+    
+    with qpg_col1:
+        # Model selection for prompt generation
+        qpg_provider = st.selectbox(
+            "AI Provider",
+            ["OpenRouter", "Groq", "X.AI (Grok)"],
+            key="qpg_provider"
+        )
+        
+        if qpg_provider == "OpenRouter":
+            from promptgen_page import OPENROUTER_MODELS
+            qpg_models = OPENROUTER_MODELS
+            qpg_default = "grok-4"
+        elif qpg_provider == "Groq":
+            from promptgen_page import GROQ_MODELS
+            qpg_models = GROQ_MODELS
+            qpg_default = "kimi-k2"
+        else:
+            from promptgen_page import XAI_MODELS
+            qpg_models = XAI_MODELS
+            qpg_default = "grok-4"
+        
+        qpg_model_keys = list(qpg_models.keys())
+        qpg_default_idx = qpg_model_keys.index(qpg_default) if qpg_default in qpg_model_keys else 0
+        
+        qpg_model_key = st.selectbox(
+            "Model",
+            options=qpg_model_keys,
+            index=qpg_default_idx,
+            key="qpg_model"
+        )
+        qpg_model = qpg_models[qpg_model_key]
+        
+        # Task selection
+        from promptgen_page import INSTUCTIONS
+        TASK_INSTRUCTIONS = INSTUCTIONS.copy()
+
+        # if the file prompts/additional_tasks.json exists, load additional instructions
+        # Add them all in INSTRUCTIONS
+        import json
+        QPG_TASKS = {
+                "GENERATE_PROMPT": "📝 Basic Prompt",
+                "GENERATE_DETAILED_PROMPT": "📝 Detailed Prompt",
+                "GENERATE_JSON_PROMPT": "📝 JSON Prompt"
+            }
+        TASK_OPTIONS = ["GENERATE_PROMPT", "GENERATE_DETAILED_PROMPT", "GENERATE_JSON_PROMPT"]
+        additional_tasks = {}
+        if os.path.exists("prompts/additional_tasks.json"):
+            with open("prompts/additional_tasks.json", "r") as f:
+                additional_tasks = json.load(f)
+            TASK_INSTRUCTIONS.update(additional_tasks)
+
+            for key in additional_tasks.keys():
+                QPG_TASKS[key] = f"📝 {key.replace('_', ' ').title()}"
+                TASK_OPTIONS.append(key)
+
+            
+
+        qpg_task = st.selectbox(
+            "Task",
+            options=TASK_OPTIONS,
+            format_func=lambda x: QPG_TASKS.get(x, x),
+            key="qpg_task"
+        )
+        
+        # Draft text input
+        qpg_draft = st.text_area(
+            "Draft Text (Optional)",
+            height=100,
+            placeholder="Enter draft text or description...",
+            key="qpg_draft"
+        )
+        
+        # Image upload (no preview)
+        qpg_image = st.file_uploader(
+            "Upload Image (Optional)",
+            type=["png", "jpg", "jpeg", "webp"],
+            key="qpg_image",
+            help="Upload an image to generate prompt from"
+        )
+        
+        qpg_generate = st.button("🚀 Generate Prompt", type="primary", width="stretch", key="qpg_gen_btn")
+    
+    with qpg_col2:
+        st.subheader("Generated Prompt")
+        
+        if qpg_generate and (qpg_draft or qpg_image):
+            try:
+                from promptgen_page import TaggerGPT, DEFAULT_SYSTEM_IMAGE_PROMPT, optimize_image
+                
+                with st.spinner(f"Generating with {qpg_model_key}..."):
+                    tagger = TaggerGPT(qpg_model)
+                    
+                    # Build instruction
+                    instruction = TASK_INSTRUCTIONS[qpg_task]
+                    
+                    if qpg_draft:
+                        instruction = f"{instruction}\n\nContext/Reference text: {qpg_draft}"
+                    
+                    # Process image if provided
+                    processed_img = None
+                    if qpg_image:
+                        qpg_image.seek(0)  # Reset file pointer to beginning
+                        img = Image.open(qpg_image).convert("RGB")
+                        processed_img = optimize_image(img, target_size=1120)
+                        # Debug: show processed image size
+                        st.image(processed_img, caption=f"Processing: {qpg_image.name}", width=100)
+
+                    # Generate
+                    result_prompt = tagger.chat_completion_prompt(
+                        DEFAULT_SYSTEM_IMAGE_PROMPT,
+                        instruction,
+                        image=processed_img
+                    )
+                    
+                    st.success("✅ Prompt generated!")
+                    
+                    # Save to session state for immediate access
+                    st.session_state['last_generated_prompt'] = result_prompt
+                    
+                    # Save to history
+                    prompt_item = {
+                        'result': result_prompt,
+                        'task': qpg_task,
+                        'model': qpg_model_key,
+                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        'has_image': qpg_image is not None,
+                        'has_text': bool(qpg_draft)
+                    }
+                    st.session_state.prompt_history.insert(0, prompt_item)
+                    
+
+                    
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+        
+        # Display result if available (outside the generate block so it persists)
+        if 'last_generated_prompt' in st.session_state and st.session_state['last_generated_prompt']:
+            result_prompt = st.session_state['last_generated_prompt']
+            
+            # Use dynamic key based on prompt content hash to force refresh
+            prompt_hash = hash(result_prompt) % 100000
+            
+            # Display result in text area (editable)
+            st.text_area("Generated Result", value=result_prompt, height=200, key=f"qpg_result_{prompt_hash}")
+
+            if st.button("📋 Copy", key="copy_generated_result", width="stretch"):
+                try:
+                    import pyperclip
+                    pyperclip.copy(st.session_state['last_generated_prompt'])
+                    st.success("✅ Copied!")
+                except Exception as e:
+                    # Display result in a code block with built-in copy button
+                    st.code(result_prompt, language=None)
+                    st.info("⚠️ Pyperclip not available. Use the code box copy button above.")
+            
+            # Download button
+            st.download_button(
+                "💾 Download Prompt",
+                data=result_prompt,
+                file_name="generated_prompt.txt",
+                mime="text/plain",
+                width="stretch",
+                key="qpg_download"
+            )
+        elif not qpg_generate:
+            st.info("👈 Enter text or upload an image, then click Generate")
+
+# Prompt History Section
+if st.session_state.prompt_history:
+    st.divider()
+    st.subheader("📜 Recent Generated Prompts")
+    
+    # Create dropdown options
+    history_options = ["Select a recent prompt..."] + [
+        f"{item['timestamp']} - {item['result'][:40]}..."
+        for item in st.session_state.prompt_history[:10]
+    ]
+    
+    hist_col1, hist_col2 = st.columns([3, 1])
+    
+    with hist_col1:
+        selected_hist_idx = st.selectbox(
+            "Quick access to your last 10 generated prompts",
+            options=range(len(history_options)),
+            format_func=lambda x: history_options[x],
+            key="main_prompt_history",
+            label_visibility="collapsed"
+        )
+    
+    with hist_col2:
+        if st.button("🗑️ Clear Prompt History", width="stretch"):
+            st.session_state.prompt_history = []
+            st.rerun()
+    
+    if selected_hist_idx > 0:
+        hist_item = st.session_state.prompt_history[selected_hist_idx - 1]
+        
+        with st.expander("📝 View Prompt Details", expanded=True):
+            detail_cols = st.columns([3, 1])
+            
+            with detail_cols[0]:
+                st.text_area(
+                    "Prompt Content",
+                    value=hist_item['result'],
+                    height=150,
+                    key=f"hist_content_{selected_hist_idx}",
+                    label_visibility="collapsed"
+                )
+            
+            with detail_cols[1]:
+                st.write("**Info:**")
+                task_label = {
+                    "GENERATE_PROMPT": "Basic Prompt",
+                    "GENERATE_DETAILED_PROMPT": "Detailed Prompt",
+                    "GENERATE_JSON_PROMPT": "JSON Prompt"
+                }.get(hist_item['task'], hist_item['task'])
+                st.caption(f"**Task:** {task_label}")
+                st.caption(f"**Model:** {hist_item['model']}")
+                st.caption(f"**Time:** {hist_item['timestamp']}")
+                
+                source_parts = []
+                if hist_item.get('has_text'):
+                    source_parts.append("Text")
+                if hist_item.get('has_image'):
+                    source_parts.append("Image")
+                source = " + ".join(source_parts) if source_parts else "Unknown"
+                st.caption(f"**Source:** {source}")
+                
+                # Copy button
+                if st.button("📋 Copy", key=f"copy_hist_{selected_hist_idx}", width="stretch"):
+                    try:
+                        import pyperclip
+                        pyperclip.copy(hist_item['result'])
+                        st.success("✅ Copied!")
+                    except:
+                        st.info("Use code box")
+            
+            # Code block for easy copying
+            st.code(hist_item['result'], language=None)
+
+
+
+# Generation History
+
+if st.session_state.generated_images:
+    st.divider()
+    st.subheader("📜 Generation History")
+    
+    for idx, item in enumerate(st.session_state.generated_images[:5]):
+        with st.expander(f"**{item['timestamp']}** - {item['model']}", expanded=(idx == 0)):
+            cols = st.columns([1, 2])
+            with cols[0]:
+                if not stealth_mode:
+                    st.image(item['image'], width="stretch")
+                else:
+                    st.info("🕶️ Hidden in Stealth Mode")
+            with cols[1]:
+                st.write("**Prompt:**")
+                st.write(item['prompt'])
+                st.write(f"**Model:** {item['model']}")
+                st.write(f"**Seed:** {item.get('seed', 'N/A')}")
+                # st.write(f"**Aspect Ratio:** {item.get('aspect_ratio', 'N/A')}")
+                st.write(f"**Reference Images:** {len(item.get('reference_images', [])) if item.get('reference_images') else 0}")
+                
+                # Download buttons
+                dl_cols = st.columns(2)
+                
+                with dl_cols[0]:
+                    # Download from history
+                    buf = BytesIO()
+                    # in the image metadata must be saved the prompt info and model and seed
+                    metadata = PngImagePlugin.PngInfo()
+                    metadata.add_text("Prompt", item['prompt'])
+                    metadata.add_text("Model", item['model'])
+                    metadata.add_text("Seed", str(item.get('seed', 'N/A')))
+                    # metadata.add_text("Aspect_Ratio", item.get('aspect_ratio', 'N/A'))
+                    metadata.add_text("Timestamp", item['timestamp'])
+
+                    item['image'].save(buf, format="PNG", pnginfo=metadata)
+                    st.download_button(
+                        label="📥 Download Image",
+                        data=buf.getvalue(),
+                        file_name=f"history_{idx}.png",
+                        mime="image/png",
+                        key=f"download_history_{idx}"
+                    )
+                
+                with dl_cols[1]:
+                    # Download comparison if reference images exist
+                    if item.get('reference_images'):
+                        comparison_img = create_comparison_image(
+                            item['image'],
+                            item['reference_images'],
+                            prompt=item['prompt'],
+                            model=item['model'],
+                            seed=item.get('seed')
+                        )
+                        if comparison_img:
+                            buf_comp = BytesIO()
+                            comparison_img.save(buf_comp, format="PNG")
+                            st.download_button(
+                                label="📥 Download Comparison",
+                                data=buf_comp.getvalue(),
+                                file_name=f"comparison_history_{idx}.png",
+                                mime="image/png",
+                                key=f"download_comparison_history_{idx}"
+                            )
+
+
+# Footer
+st.divider()
+st.markdown("""
+<div style='text-align: center; color: gray; padding: 20px;'>
+    <p>Built with Streamlit • Powered by OpenRouter API</p>
+</div>
+""", unsafe_allow_html=True)
